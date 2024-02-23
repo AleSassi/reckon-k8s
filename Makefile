@@ -2,9 +2,10 @@ SHELL := /bin/bash
 
 .PHONY: run
 run: reckon
-	docker run -it --privileged -e DISPLAY \
+	docker run -it --rm --pid='host' --privileged -e DISPLAY \
 	--tmpfs /data \
 	--network host --name reckon \
+	-v /var/run/docker.sock:/var/run/docker.sock \
 	 cjen1/reckon:latest bash
 
 .PHONY: tester
@@ -15,8 +16,12 @@ tester: reckon
 	 cjen1/reckon:latest bash /root/scripts/run.sh python /root/scripts/tester.py
 
 .PHONY:reckon
-reckon: reckon-mininet etcd-image zk-image
+reckon: reckon-containernet etcd-image
 	docker build -t cjen1/reckon:latest .
+
+.PHONY: reckon-containernet
+reckon-containernet: 
+	docker build -f Dockerfile.containernet -t AleSassi/reckon-containernet:latest .
 
 .PHONY: reckon-mininet
 reckon-mininet: 
@@ -26,6 +31,6 @@ reckon-mininet:
 etcd-image:
 	docker build -f Dockerfile.etcd -t etcd-image .
 
-.PHONY: zk-image
-zk-image:
-	docker build -f Dockerfile.zookeeper -t zk-image .
+.PHONY: k8s-image
+k8s-image:
+	docker build -f Dockerfile.kubernetes -t k8s-image .

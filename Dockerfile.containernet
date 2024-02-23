@@ -1,0 +1,66 @@
+FROM ubuntu:focal
+
+USER root
+WORKDIR /root
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# install required packages
+RUN apt-get clean
+RUN apt-get update \
+    && apt-get install -y  git \
+    net-tools \
+    aptitude \
+    build-essential \
+    python3-setuptools \
+    python3-dev \
+    python3-pip \
+    software-properties-common \
+    ansible \
+    curl \
+    iptables \
+    iputils-ping \
+    sudo
+
+RUN apt-get update -yq && apt-get install -yq \
+    arping \
+    git \
+    hping3 \
+    iputils-ping \
+    net-tools \
+    sudo \
+    openssl \
+    traceroute
+
+RUN apt update -yq && apt install -yq \
+    build-essential \
+    libncurses5-dev \
+    libgdbm-dev \
+    libnss3-dev \
+    libssl-dev \
+    libreadline-dev \
+    libffi-dev \
+    libsqlite3-dev \
+    wget \
+    libbz2-dev \
+    zlib1g-dev \
+    python-is-python3
+
+# install containernet (using its Ansible playbook)
+COPY ./vendor/containernet /root/containernet
+WORKDIR /root/containernet/ansible
+RUN ansible-playbook -i "localhost," -c local --skip-tags "notindocker" install.yml
+WORKDIR /root/containernet
+RUN make develop
+
+# tell containernet that it runs in a container
+ENV CONTAINERNET_NESTED 1
+
+# Important: This entrypoint is required to start the OVS service
+COPY ./scripts/containernet_entrypoint.sh /root/containernet/util/docker/entrypoint.sh
+RUN chmod +x /root/containernet/util/docker/entrypoint.sh
+
+ENV NETSIM_RUNTIME="containernet"
+
+ENTRYPOINT ["util/docker/entrypoint.sh"]
+CMD ["mn"]

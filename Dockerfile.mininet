@@ -50,5 +50,7 @@ RUN apt-get clean
 COPY ./scripts/ENTRYPOINT.sh /root/mininet/util/ENTRYPOINT.sh
 RUN chmod +x /root/mininet/util/ENTRYPOINT.sh
 
+ENV NETSIM_RUNTIME="mininet"
+
 ENTRYPOINT [ "/root/mininet/util/ENTRYPOINT.sh"]
 CMD ["mn"]

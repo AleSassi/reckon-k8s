@@ -6,7 +6,7 @@ from reckon.failures   import register_failure_args, get_failure_provider
 from reckon.topologies import register_topo_args,    get_topology_provider
 from reckon.systems    import register_system_args,  get_system
 
-import logging
+import logging, time, os
 
 logging.basicConfig(
   format="%(asctime)s %(message)s", datefmt="%I:%M:%S %p", level=logging.DEBUG
@@ -65,6 +65,10 @@ if __name__ == "__main__":
           failures = failure_provider.get_failures(cluster, system, restarters, stoppers)
 
           print("BENCHMARK: testing connectivity, and allowing network to settle")
+          if str(os.environ["NETSIM_RUNTIME"]) == "containernet":
+            print("Waiting 10s for the network to start up and settle...")
+            time.sleep(10) # Sleeping for some time allows all COntainernet hosts to start up
+          print("Pinging all hosts")
           net.pingAll()
 
           print("BENCHMARK: Starting Test")
