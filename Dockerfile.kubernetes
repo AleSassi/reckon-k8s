@@ -1,0 +1,6 @@
+FROM golang:latest
+
+ADD reckon/systems/kubernetes/Makefile /reckon/systems/kubernetes/Makefile
+ADD reckon/goclient /reckon/goclient
+ADD reckon/systems/kubernetes/clients /reckon/systems/kubernetes/clients
+RUN cd /reckon/systems/kubernetes && make client
