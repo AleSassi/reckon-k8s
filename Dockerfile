@@ -49,4 +49,5 @@ ENV SHELL=/bin/bash
 RUN mkdir -p /results/logs
 
 # Add built artefacts
+ENV ETCD_UNSUPPORTED_ARCH=arm64
 COPY --from=etcd-image /reckon/systems/etcd reckon/systems/etcd
