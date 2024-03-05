@@ -46,6 +46,9 @@ eggs/
 .eggs/
 lib/
 lib64/
+bin/
+lib64
+pyvenv.cfg
 parts/
 sdist/
 var/
