@@ -9,10 +9,15 @@ import time
 import os
 import shlex
 import threading
+import docker
+import pty
+import select
 
-from mininet.net import Mininet
-from mininet.node import Host
+from mininet.net import Mininet, Containernet
+from mininet.node import Host, Docker
+from mininet.log import info, error, warn, debug
 from pydantic import BaseModel, Field
+from docker.models.containers import Container
 
 
 class OperationKind(str, Enum):
@@ -340,3 +345,271 @@ class ThreadWithResult(threading.Thread):
     @property
     def result(self) -> Any:
         return self._result
+
+class KubeNode ( Docker ):
+    """
+    Node that represents a docker container, but with elevated privileges.
+    """
+
+    def __init__(self, name, dimage=None, dcmd=None, build_params={},
+                 **kwargs):
+        """
+        Creates a Docker container as Mininet host.
+
+        Resource limitations based on CFS scheduler:
+        * cpu.cfs_quota_us: the total available run-time within a period (in microseconds)
+        * cpu.cfs_period_us: the length of a period (in microseconds)
+        (https://www.kernel.org/doc/Documentation/scheduler/sched-bwc.txt)
+
+        Default Docker resource limitations:
+        * cpu_shares: Relative amount of max. avail CPU for container
+            (not a hard limit, e.g. if only one container is busy and the rest idle)
+            e.g. usage: d1=4 d2=6 <=> 40% 60% CPU
+        * cpuset_cpus: Bind containers to CPU 0 = cpu_1 ... n-1 = cpu_n (string: '0,2')
+        * mem_limit: Memory limit (format: <number>[<unit>], where unit = b, k, m or g)
+        * memswap_limit: Total limit = memory + swap
+
+        All resource limits can be updated at runtime! Use:
+        * updateCpuLimits(...)
+        * updateMemoryLimits(...)
+        """
+        self.dimage = dimage
+        self.dnameprefix = "mn"
+        self.dcmd = dcmd if dcmd is not None else "/bin/bash"
+        self.dc = None  # pointer to the dict containing 'Id' and 'Warnings' keys of the container
+        self.dcinfo = None
+        self.did = None # Id of running container
+        #  let's store our resource limits to have them available through the
+        #  Mininet API later on
+        defaults = { 'cpu_quota': None,
+                     'cpu_period': None,
+                     'cpu_shares': None,
+                     'cpuset_cpus': None,
+                     'mem_limit': None,
+                     'memswap_limit': None,
+                     'environment': {},
+                     'volumes': [],  # use ["/home/user1/:/mnt/vol2:rw"]
+                     'tmpfs': [], # use ["/home/vol1/:size=3G,uid=1000"]
+                     'network_mode': None,
+                     'publish_all_ports': True,
+                     'port_bindings': {},
+                     'ports': [],
+                     'dns': [],
+                     'ipc_mode': None,
+                     'devices': [],
+                     'cap_add': ['net_admin'],  # we need this to allow mininet network setup
+                     'storage_opt': None,
+                     'sysctls': {},
+                     'shm_size': '64mb',
+                     'cpus': None,
+                     'device_requests': []
+                     }
+        defaults.update( kwargs )
+
+        if 'net_admin' not in defaults['cap_add']:
+            defaults['cap_add'] += ['net_admin']  # adding net_admin if it's cleared out to allow mininet network setup
+
+        # keep resource in a dict for easy update during container lifetime
+        self.resources = dict(
+            cpu_quota=defaults['cpu_quota'],
+            cpu_period=defaults['cpu_period'],
+            cpu_shares=defaults['cpu_shares'],
+            cpuset_cpus=defaults['cpuset_cpus'],
+            mem_limit=defaults['mem_limit'],
+            memswap_limit=defaults['memswap_limit']
+        )
+        self.shm_size = defaults['shm_size']
+        self.nano_cpus = defaults['cpus'] * 1_000_000_000 if defaults['cpus'] else None
+        self.device_requests = defaults['device_requests']
+        self.volumes = defaults['volumes']
+        self.tmpfs = defaults['tmpfs']
+        self.environment = {} if defaults['environment'] is None else defaults['environment']
+        # setting PS1 at "docker run" may break the python docker api (update_container hangs...)
+        # self.environment.update({"PS1": chr(127)})  # CLI support
+        self.network_mode = defaults['network_mode']
+        self.publish_all_ports = defaults['publish_all_ports']
+        self.port_bindings = defaults['port_bindings']
+        self.dns = defaults['dns']
+        self.ipc_mode = defaults['ipc_mode']
+        self.devices = defaults['devices']
+        self.cap_add = defaults['cap_add']
+        self.sysctls = defaults['sysctls']
+        self.storage_opt = defaults['storage_opt']
+
+        # setup docker client
+        # self.dcli = docker.APIClient(base_url='unix://var/run/docker.sock')
+        self.d_client = docker.from_env()
+        self.dcli = self.d_client.api
+
+        _id = None
+        if build_params.get("path", None):
+            if not build_params.get("tag", None):
+                if dimage:
+                    build_params["tag"] = dimage
+            _id, output = self.build(**build_params)
+            dimage = _id
+            self.dimage = _id
+            info("Docker image built: id: {},  {}. Output:\n".format(
+                _id, build_params.get("tag", None)))
+            info(output)
+
+        # pull image if it does not exist
+        self._check_image_exists(dimage, True, _id=None)
+
+        # for DEBUG
+        debug("Created docker container object %s\n" % name)
+        debug("image: %s\n" % str(self.dimage))
+        debug("dcmd: %s\n" % str(self.dcmd))
+        info("%s: kwargs %s\n" % (name, str(kwargs)))
+
+        # creats host config for container
+        # see: https://docker-py.readthedocs.io/en/stable/api.html#docker.api.container.ContainerApiMixin.create_host_config
+        hc = self.dcli.create_host_config(
+            network_mode=self.network_mode,
+            privileged=True,
+            binds=self.volumes,
+            tmpfs=self.tmpfs,
+            publish_all_ports=self.publish_all_ports,
+            port_bindings=self.port_bindings,
+            mem_limit=self.resources.get('mem_limit'),
+            cpuset_cpus=self.resources.get('cpuset_cpus'),
+            dns=self.dns,
+            ipc_mode=self.ipc_mode,  # string
+            devices=self.devices,  # see docker-py docu
+            cap_add=self.cap_add,  # see docker-py docu
+            sysctls=self.sysctls,   # see docker-py docu
+            storage_opt=self.storage_opt,
+            # Assuming Docker uses the cgroupfs driver, we set the parent to safely
+            # access cgroups when modifying resource limits.
+            cgroup_parent='/docker',
+            shm_size=self.shm_size,
+            nano_cpus=self.nano_cpus,
+            device_requests=self.device_requests,
+        )
+
+        if kwargs.get("rm", False):
+            container_list = self.dcli.containers(all=True)
+            for container in container_list:
+                for container_name in container.get("Names", []):
+                    if "%s.%s" % (self.dnameprefix, name) in container_name:
+                        self.dcli.remove_container(container="%s.%s" % (self.dnameprefix, name), force=True)
+                        break
+
+        # create new docker container
+        self.dc = self.dcli.create_container(
+            name="%s.%s" % (self.dnameprefix, name),
+            image=self.dimage,
+            command=self.dcmd,
+            entrypoint=list(),  # overwrite (will be executed manually at the end)
+            stdin_open=True,  # keep container open
+            tty=True,  # allocate pseudo tty
+            environment=self.environment,
+            #network_disabled=True,  # docker stats breaks if we disable the default network
+            host_config=hc,
+            ports=defaults['ports'],
+            labels=['com.containernet'],
+            volumes=[self._get_volume_mount_name(v) for v in self.volumes if self._get_volume_mount_name(v) is not None],
+            hostname=name,
+        )
+
+        # start the container
+        self.dcli.start(self.dc)
+        debug("Docker container %s started\n" % name)
+
+        # fetch information about new container
+        self.dcinfo = self.dcli.inspect_container(self.dc)
+        self.did = self.dcinfo.get("Id")
+        self.dname = "%s.%s" % (self.dnameprefix, name)
+
+        # call original Node.__init__
+        Host.__init__(self, name, **kwargs)
+
+        # let's initially set our resource limits
+        self.update_resources(**self.resources)
+
+        self.master = None
+        self.slave = None
+
+    def start(self):
+        # Overridden to do nothing, since the entrypoint is already manually executed when starting the container
+        return
+
+    # Command support via shell process in namespace
+    def startShell( self, privileged: bool = True, *args, **kwargs ):
+        "Start a shell process for running commands"
+        if self.shell:
+            error( "%s: shell is already running\n" % self.name )
+            return
+        # mnexec: (c)lose descriptors, (d)etach from tty,
+        # (p)rint pid, and run in (n)amespace
+        # opts = '-cd' if mnopts is None else mnopts
+        # if self.inNamespace:
+        #     opts += 'n'
+        # bash -i: force interactive
+        # -s: pass $* to shell, and make process easy to find in ps
+        # prompt is set to sentinel chr( 127 )
+        cmd = [ 'docker', 'exec', '-it',  '%s.%s' % ( self.dnameprefix, self.name ), 'env', 'PS1=' + chr( 127 ),
+                'bash', '--norc', '-is', 'mininet:' + self.name ]
+        if privileged:
+            cmd = [ 'docker', 'exec', '-it', '--privileged',  '%s.%s' % ( self.dnameprefix, self.name ), 'env', 'PS1=' + chr( 127 ),
+                'bash', '--norc', '-is', 'mininet:' + self.name ]
+        # Spawn a shell subprocess in a pseudo-tty, to disable buffering
+        # in the subprocess and insulate it from signals (e.g. SIGINT)
+        # received by the parent
+        self.master, self.slave = pty.openpty()
+        self.shell = self._popen( cmd, stdin=self.slave, stdout=self.slave, stderr=self.slave,
+                                  close_fds=False )
+        self.stdin = os.fdopen( self.master, 'r' )
+        self.stdout = self.stdin
+        self.pid = self._get_pid()
+        self.pollOut = select.poll()
+        self.pollOut.register( self.stdout )
+        # Maintain mapping between file descriptors and nodes
+        # This is useful for monitoring multiple nodes
+        # using select.poll()
+        self.outToNode[ self.stdout.fileno() ] = self
+        self.inToNode[ self.stdin.fileno() ] = self
+        self.execed = False
+        self.lastCmd = None
+        self.lastPid = None
+        self.readbuf = ''
+        # Wait for prompt
+        while True:
+            data = self.read( 1024 )
+            if data[ -1 ] == chr( 127 ):
+                break
+            self.pollOut.poll()
+        self.waiting = False
+        # +m: disable job control notification
+        self.cmd( 'unset HISTFILE; stty -echo; set +m' )
+    
+    def execCmd( self, cmd_str: str, privileged: bool = True, *args, **kwargs ) -> str:
+        dock_container: Container = self.d_client.containers.get(self.dname)
+        print("CONTAINER: ")
+        print(dock_container)
+        res = dock_container.exec_run(cmd_str, privileged=privileged)
+        print(res)
+        return res.output.decode('utf-8')
+    
+    def cmd( self, *args, **kwargs ):
+        """Send a command, wait for output, and return it.
+           cmd: string"""
+        verbose = kwargs.get( 'verbose', False )
+        privileged = kwargs.get('privileged', False)
+        log = info if verbose else debug
+        log( '*** %s : %s\n' % ( self.name, args ) )
+        if self.shell:
+            self.shell.poll()
+            if self.shell.returncode is not None:
+                print("shell died on ", self.name)
+                self.shell = None
+                self.startShell(privileged=privileged)
+            self.sendCmd( *args, **kwargs )
+            return self.waitOutput( verbose )
+        else:
+            warn( '(%s exited - ignoring cmd%s)\n' % ( self, args ) )
+        return None
+    
+class KuberNet (Containernet):
+    def addDocker(self, name, **params) -> KubeNode:
+        return self.addHost(name, cls=KubeNode, **params)

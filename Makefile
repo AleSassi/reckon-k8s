@@ -6,6 +6,9 @@ run: reckon
 	--tmpfs /data \
 	--network host --name reckon \
 	-v /var/run/docker.sock:/var/run/docker.sock \
+	-v ./files/kubernetes:/etc/kubernetes \
+	-v /lib/modules:/lib/modules:ro \
+	-v /var \
 	 cjen1/reckon:latest bash
 
 .PHONY: tester
@@ -16,12 +19,20 @@ tester: reckon
 	 cjen1/reckon:latest bash /root/scripts/run.sh python /root/scripts/tester.py
 
 .PHONY:reckon
-reckon: reckon-containernet etcd-image
+reckon: reckon-containernet etcd-image reckon-k8s-control reckon-k8s-worker
 	docker build -t cjen1/reckon:latest .
 
 .PHONY: reckon-containernet
 reckon-containernet: 
 	docker build -f Dockerfile.containernet -t AleSassi/reckon-containernet:latest .
+
+.PHONY: reckon-k8s-control
+reckon-k8s-control: 
+	docker build -f Dockerfile.kubecpnode -t AleSassi/reckon-k8s-control:latest .
+
+.PHONY: reckon-k8s-worker
+reckon-k8s-worker: 
+	docker build -f Dockerfile.kubewnode -t AleSassi/reckon-k8s-worker:latest .
 
 .PHONY: reckon-mininet
 reckon-mininet: 

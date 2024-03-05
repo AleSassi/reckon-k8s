@@ -62,5 +62,5 @@ RUN chmod +x /root/containernet/util/docker/entrypoint.sh
 
 ENV NETSIM_RUNTIME="containernet"
 
-ENTRYPOINT ["util/docker/entrypoint.sh"]
+ENTRYPOINT ["/root/containernet/util/docker/entrypoint.sh"]
 CMD ["mn"]

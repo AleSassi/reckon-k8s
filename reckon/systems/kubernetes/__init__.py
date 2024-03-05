@@ -32,8 +32,8 @@ class ClientType(Enum):
         return self.value
 
 
-class Etcd(t.AbstractSystem):
-    binary_path = "reckon/systems/etcd/bin/etcd"
+class Kubernetes(t.AbstractSystem):
+    binary_path = ""
     additional_flags = ""
 
     def get_client(self, args):
@@ -57,26 +57,7 @@ class Etcd(t.AbstractSystem):
             tag = self.get_node_tag(host)
 
             def start_cmd(cluster_state, tag=tag, host=host):
-                election_timeout = self.failure_timeout * 1000
-                heartbeat_interval = election_timeout / 10
-
-                etcd_cmd = " ".join([
-                    self.binary_path,
-                    f"--data-dir={self.data_dir}/{tag}",
-                    f"--name {tag}",
-                    f"--initial-advertise-peer-urls http://{host.IP()}:2380",
-                    f"--listen-peer-urls http://{host.IP()}:2380",
-                    f"--listen-client-urls http://0.0.0.0:2379",
-                    f"--advertise-client-urls http://{host.IP()}:2379",
-                    f"--initial-cluster {cluster_str}",
-                    f"--initial-cluster-token reckon_cluster",
-                    f"--initial-cluster-state {cluster_state}",
-                    f"--heartbeat-interval={int(heartbeat_interval)}",
-                    f"--election-timeout={int(election_timeout)}",
-                    ])
-                cmd = self.add_stderr_logging(etcd_cmd, tag + ".log")
-                cmd = self.add_stdout_logging(cmd, tag + ".log")
-                return cmd
+                return ""
 
             self.start_screen(host, start_cmd("new"))
             logging.debug("Start cmd: " + start_cmd("new"))
@@ -120,27 +101,7 @@ class Etcd(t.AbstractSystem):
 
     def get_leader(self, cluster):
         ips = [host.IP() for host in cluster]
-        for host in cluster:
-            try:
-                cmd = "ETCDCTL_API=3 reckon/systems/etcd/bin/etcdctl endpoint status --cluster"
-                resp = host.cmd(cmd)
-                leader_ip = self.parse_resp(resp)
-                leader = cluster[ips.index(leader_ip)]
-                return leader
-            except:
-                pass
+        return cluster[0]
 
     def stat(self, host: t.MininetHost) -> str:
-        cmd = "ETCDCTL_API=3 reckon/systems/etcd/bin/etcdctl endpoint metrics"
-        resp = host.cmd(cmd)
-        assert(resp)
-        return resp
-
-class EtcdSBN(Etcd):
-    binary_path = "reckon/systems/etcd/etcd/bin/etcd"
-
-class EtcdPreVote(Etcd):
-    additional_flags = "--pre-vote=True"
-
-class EtcdPreVoteSBN(EtcdPreVote):
-    binary_path = "reckon/systems/etcd/etcd/bin/etcd"
+        return ""

@@ -5,6 +5,7 @@ from reckon.systems.etcd import Etcd, EtcdSBN, EtcdPreVote, EtcdPreVoteSBN
 from reckon.systems.zookeeper import Zookeeper, ZookeeperFLE
 from reckon.systems.ocons import OconsPaxos, OconsRaft, OconsRaftSBN, OconsRaftPrevote, OconsRaftPrevoteSBN
 from reckon.systems.ocons import OConsConspireLeader, OConsConspireDC, OConsConspireLeaderDC
+from reckon.systems.kubernetes import Kubernetes
 import reckon.reckon_types as t
 
 
@@ -23,6 +24,7 @@ class SystemType(Enum):
     OConsConspireLeader = "ocons-conspire-leader"
     OConsConspireDC = "ocons-conspire-dc"
     OConsConspireLeaderDC = "ocons-conspire-leader-dc"
+    Kubernetes = "kubernetes"
 
     def __str__(self):
         return self.value
@@ -99,6 +101,8 @@ def get_system(args) -> t.AbstractSystem:
         res = OConsConspireDC(args)
     elif args.system_type is SystemType.OConsConspireLeaderDC:
         res = OConsConspireLeaderDC(args)
+    elif args.system_type is SystemType.Kubernetes:
+        res = Kubernetes(args)
     else:
         raise Exception("Not supported system type: " + str(args.system_type))
     res.system_type = args.system_type

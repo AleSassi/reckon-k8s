@@ -1,12 +1,14 @@
 from enum import Enum
 from reckon.topologies.simple import SimpleTopologyProvider
 from reckon.topologies.wan import WanTopologyProvider
+from reckon.topologies.simple_k8s import SimpleKubeTopologyProvider
 
 import reckon.reckon_types as t
 
 
 class TopologyType(Enum):
     Simple = "simple"
+    Simple_K8s = "simple_k8s"
     Wan = "wan"
 
     def __str__(self):
@@ -57,6 +59,13 @@ def get_topology_provider(args) -> t.AbstractTopologyGenerator:
         )
     elif args.topo_type is TopologyType.Wan:
         return WanTopologyProvider(
+            args.number_nodes,
+            args.link_latency,
+            args.link_loss,
+            args.link_jitter,
+        )
+    elif args.topo_type is TopologyType.Simple_K8s:
+        return SimpleKubeTopologyProvider(
             args.number_nodes,
             args.link_latency,
             args.link_loss,

@@ -1,5 +1,7 @@
 FROM AleSassi/reckon-containernet:latest as base
 
+WORKDIR /root
+
 RUN apt-get update && apt-get install --no-install-recommends -yy -qq \
     build-essential \
     software-properties-common
