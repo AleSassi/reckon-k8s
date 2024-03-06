@@ -10,6 +10,8 @@ LABEL io.x-k8s.kind.cluster="cl"
 
 WORKDIR /
 
+RUN mkdir -p /results/logs
+
 RUN touch /kind/kubeadm.conf
 
 CMD [ "/bin/bash" ]

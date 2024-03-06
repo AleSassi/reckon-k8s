@@ -1,0 +1,1 @@
+python -m reckon kubernetes simple_k8s none -d --system_logs /results/logs

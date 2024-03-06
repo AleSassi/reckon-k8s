@@ -11,6 +11,9 @@ LABEL io.x-k8s.kind.cluster="cl"
 
 WORKDIR /
 
+RUN mkdir -p /results/logs
+
+ADD ./scripts/startcp.sh /kind
 ADD ./scripts/copyconfigs.sh /kind
 RUN touch /kind/kubeadm.conf
 

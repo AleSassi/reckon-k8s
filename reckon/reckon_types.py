@@ -265,10 +265,10 @@ class AbstractSystem(ABC):
         log = self.log_location
         return f"{cmd} 2> {log}/{time}_{tag}.err"
 
-    def add_stdout_logging(self, cmd: str, tag: str):
+    def add_stdout_logging(self, cmd: str, tag: str, verbose: bool=False):
         time = self.creation_time
         log = self.log_location
-        return f"{cmd} > {log}/{time}_{tag}.out"
+        return f"{cmd} | tee {log}/{time}_{tag}.out" if verbose else f"{cmd} > {log}/{time}_{tag}.out"
 
     @abstractmethod
     def stat(self, host: MininetHost) -> str:
@@ -530,8 +530,20 @@ class KubeNode ( Docker ):
         self.master = None
         self.slave = None
 
+    def setKubeAttrs(self, is_control: bool, name: str, ip_addr: str, volume: str):
+        self.k8s_name = name
+        self.ip_addr = ip_addr
+        if is_control:
+            self.endpoint = f"{ip_addr}:6443"
+        else:
+            last_ip = int(ip_addr.split(".")[-1])
+            self.worker_num = 255 - last_ip
+        self.volume = volume
+        self.is_control = is_control
+
     def start(self):
         # Overridden to do nothing, since the entrypoint is already manually executed when starting the container
+        self.running = True
         return
 
     # Command support via shell process in namespace
@@ -583,14 +595,6 @@ class KubeNode ( Docker ):
         # +m: disable job control notification
         self.cmd( 'unset HISTFILE; stty -echo; set +m' )
     
-    def execCmd( self, cmd_str: str, privileged: bool = True, *args, **kwargs ) -> str:
-        dock_container: Container = self.d_client.containers.get(self.dname)
-        print("CONTAINER: ")
-        print(dock_container)
-        res = dock_container.exec_run(cmd_str, privileged=privileged)
-        print(res)
-        return res.output.decode('utf-8')
-    
     def cmd( self, *args, **kwargs ):
         """Send a command, wait for output, and return it.
            cmd: string"""
@@ -610,6 +614,100 @@ class KubeNode ( Docker ):
             warn( '(%s exited - ignoring cmd%s)\n' % ( self, args ) )
         return None
     
+    def kill(self):
+        """
+        Simulates a (recoverable) node failure
+        """
+        if self.running:
+            dc: Container = self.d_client.containers.get(self.dname)
+            dc.pause() # TODO: Can we use kill here and then restart the container by reattaching it to the network??
+        self.running = False
+    
+    def restart(self):
+        if not self.running:
+            dc: Container = self.d_client.containers.get(self.dname)
+            dc.unpause() # TODO: Can we use restart and then reattach the container to the network??
+        self.running = True
+
+    
 class KuberNet (Containernet):
+    def __init__(self, **params):
+        Containernet.__init__(self, **params);
+        self.cp_num = 0
+        self.host_num = 0
+        self.worker_num = 0
+        self.config_dict: dict = {
+            "control_plane": {},
+            "workers": []
+        }
+
     def addDocker(self, name, **params) -> KubeNode:
         return self.addHost(name, cls=KubeNode, **params)
+    
+    def _add_control_plane(self):
+        assert(self.cp_num == 0)
+        name = "cp"
+        ip_addr = f"10.0.0.{self.cp_num + 1}"
+        self.cp_num += 1
+        self.host_num += 1
+        # Create the shared Docker volume
+        docker.from_env().volumes.create("kubefiles_cp")
+        self.config_dict["control-plane"] = {
+            "name": name,
+            "ip_addr": ip_addr,
+            "endpoint": f"{ip_addr}:6443",
+            "volume": "kubefiles_cp"
+        }
+    
+    def _add_worker_node(self):
+        assert(self.cp_num > 0 and self.cp_num < 254)
+        name = f"wn{'' if self.worker_num == 0 else (self.worker_num + 1)}"
+        self.worker_num += 1
+        self.host_num += 1
+        # Create the shared Docker volume
+        docker.from_env().volumes.create(f"kubefiles_wn{self.worker_num}")
+        self.config_dict["workers"].append({
+            "name": name,
+            "ip_addr": f"10.0.0.{255 - self.worker_num}",
+            "volume": f"kubefiles_wn{self.worker_num}"
+        })
+    
+    #def createCluster(self, control_planes=1, workers=2) -> list[KubeNode]:
+    def createCluster(self, workers=2) -> list[KubeNode]:
+        nodes: list[KubeNode] = []
+        self._add_control_plane()
+        if workers > 0:
+            for _ in range(workers):
+                self._add_worker_node()
+        
+        # Preconfigure all nodes
+        for i in range(1 + workers):
+            # Generate the kubeadm config file for the node
+            is_control = i == 0
+            worker_idx = i - 1
+            node_info = self.config_dict["control-plane"] if is_control else self.config_dict["workers"][worker_idx]
+            
+            # Determine the shared folders/volumes for the node
+            docker_vols = ["/lib/modules:/lib/modules:ro", # Required by the KinD node image
+                           "/var", # Required by the KinD node image
+                           f"kubefiles_{'cp' if is_control else 'wn'+str(worker_idx + 1)}:/etc/kubernetes:rw"]
+            if is_control:
+                # The control plane mounts the Docker volume of each worker's /etc/kubernetes dir
+                # This way it can easily copy the config required by the KinD node to workers
+                workers: list[dict] = self.config_dict["workers"]
+                i = 1
+                for worker in workers:
+                    docker_vols.append(f"{worker['volume']}:/kind/nodedata/wn{i}")
+                    i += 1
+
+            # Create the Node container
+            kubenode = self.addDocker(node_info['name'],
+                                      ip=node_info['ip_addr'],
+                                      dimage=f"AleSassi/reckon-k8s-{'control' if is_control else 'worker'}",
+                                      dcmd="/usr/local/bin/entrypoint /sbin/init && /bin/bash", 
+                                      volumes=docker_vols)
+            kubenode.setKubeAttrs(is_control, node_info["name"], node_info["ip_addr"], node_info["volume"])
+            kubenode.node_img = f"AleSassi/reckon-k8s-{'control' if is_control else 'worker'}"
+            kubenode.docker_vols = docker_vols
+            nodes.append(kubenode)
+        return nodes

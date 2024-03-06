@@ -10,3 +10,7 @@ Dockerfile
 
 **/clients/*/client
 
+bin
+include
+lib
+lib64

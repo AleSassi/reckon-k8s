@@ -1,6 +1,7 @@
 from enum import Enum
 import subprocess
 import logging
+import yaml
 
 import reckon.reckon_types as t
 
@@ -45,29 +46,84 @@ class Kubernetes(t.AbstractSystem):
             raise Exception("Not supported client type: " + str(args.client))
 
     def start_nodes(self, cluster):
-        cluster_str = ",".join(
-            self.get_node_tag(host) + "=http://" + host.IP() + ":2380"
-            for _, host in enumerate(cluster)
-        )
-
         restarters = {}
         stoppers = {}
 
-        for host in cluster:
-            tag = self.get_node_tag(host)
+        kubecluster: list[t.KubeNode] = cluster
+        control_plane = kubecluster[0]
+        # Now that interfaces are up, we can start our Kubernetes cluster
+        for kubenode in kubecluster:
+            tag = self.get_node_tag(kubenode)
 
-            def start_cmd(cluster_state, tag=tag, host=host):
-                return ""
+            # Generate the kubeadm config file for the node
+            config_str = ""
+            with open("/root/files/conf/clusterconfig.template", "r") as conf_template_file:
+                conf_template = yaml.safe_load(conf_template_file)
+                conf_template["controlPlaneEndpoint"] = control_plane.endpoint
+                conf_template["controllerManager"]["extraArgs"]["enable-hostpath-provisioner"] = "true"
+                config_str += yaml.dump(conf_template, default_style='"')
+                config_str += "---\n"
+            with open("/root/files/conf/initconfig.template", "r") as conf_template_file:
+                conf_template = yaml.safe_load(conf_template_file)
+                conf_template["localAPIEndpoint"]["advertiseAddress"] = kubenode.ip_addr
+                conf_template["nodeRegistration"]["kubeletExtraArgs"]["node-ip"] = kubenode.ip_addr
+                conf_template["nodeRegistration"]["kubeletExtraArgs"]["provider-id"] += kubenode.k8s_name
+                config_str += yaml.dump(conf_template)
+                config_str += "---\n"
+            with open("/root/files/conf/joinconfig.template", "r") as conf_template_file:
+                conf_template = yaml.safe_load(conf_template_file)
+                conf_template["discovery"]["bootstrapToken"]["apiServerEndpoint"] = control_plane.endpoint
+                conf_template["nodeRegistration"]["kubeletExtraArgs"]["node-ip"] = kubenode.ip_addr
+                conf_template["nodeRegistration"]["kubeletExtraArgs"]["provider-id"] += kubenode.k8s_name
+                if kubenode.is_control:
+                    conf_template["controlPlane"] = {
+                        "localAPIEndpoint": {
+                            "advertiseAddress": control_plane.ip_addr,
+                            "bindPort": 6443
+                        }
+                    }
+                config_str += yaml.dump(conf_template)
+                config_str += "---\n"
+            with open("/root/files/conf/kubeletconfig.template", "r") as conf_template_file:
+                conf_template = yaml.safe_load(conf_template_file)
+                config_str += yaml.dump(conf_template)
+                config_str += "---\n"
+            with open("/root/files/conf/kubeproxyconfig.template", "r") as conf_template_file:
+                conf_template = yaml.safe_load(conf_template_file)
+                config_str += yaml.dump(conf_template)
+            
+            kubenode.cmd(f"echo '{config_str}' > /kind/kubeadm.conf")
 
-            self.start_screen(host, start_cmd("new"))
-            logging.debug("Start cmd: " + start_cmd("new"))
+            # Perform node-specific things and start the cluster
+            start_cmd = ""
+            if kubenode.is_control:
+                # Prepare files for installation of CNI
+                with open("/root/files/conf/cni.template", "r") as cni_conf_template:
+                    cni_template_gen = yaml.safe_load_all(cni_conf_template)
+                    cni_template = list(cni_template_gen)
+                    cni_template[3]["spec"]["template"]["spec"]["containers"][0]["env"].append({
+                        "name": "CONTROL_PLANE_ENDPOINT",
+                        "value": control_plane.endpoint
+                    })
+                    # Remove a trailing None
+                    cni_template.pop()
+                    cni_template_str: str = yaml.safe_dump_all(cni_template)
+                    kubenode.cmd(f"echo '{cni_template_str}' > /kind/manifests/patched-cni.conf")
+                # Start the Control Plane
+                start_cmd = "bash /kind/startcp.sh"
+            else:
+                # Join all worker nodes!
+                start_cmd = "kubeadm join --config=/kind/kubeadm.conf --skip-phases=preflight --v=6"
+            start_cmd = self.add_stderr_logging(start_cmd, tag + ".log")
+            start_cmd = self.add_stdout_logging(start_cmd, tag + ".log", verbose=True)
+
+            logging.debug("Start cmd: " + start_cmd)
+            kubenode.cmd(start_cmd, verbose=True)
 
             # We use the default arguemnt to capture the host variable semantically rather than lexically
-            stoppers[tag] = lambda host=host: self.kill_screen(host)
+            stoppers[tag] = lambda host=kubenode: host.kill()
 
-            restarters[tag] = lambda host=host, start_cmd=start_cmd: self.start_screen(
-                host, start_cmd("existing")
-            )
+            restarters[tag] = lambda host=kubenode, start_cmd=start_cmd: host.restart()
 
         return restarters, stoppers
 
