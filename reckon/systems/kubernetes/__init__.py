@@ -111,7 +111,7 @@ class Kubernetes(t.AbstractSystem):
                     cni_template_str: str = yaml.safe_dump_all(cni_template)
                     kubenode.cmd(f"echo '{cni_template_str}' > /kind/manifests/patched-cni.conf")
                 # Start the Control Plane
-                start_cmd = "bash /kind/startcp.sh"
+                start_cmd = "source /kind/startcp.sh"
             else:
                 # Join all worker nodes!
                 start_cmd = "kubeadm join --config=/kind/kubeadm.conf --skip-phases=preflight --v=6"

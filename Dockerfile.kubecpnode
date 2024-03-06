@@ -2,6 +2,7 @@ FROM kindest/node:v1.29.2
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV KIND_EXPERIMENTAL_CONTAINERD_SNAPSHOTTER=''
+ENV KUBECONFIG=/etc/kubernetes/admin.conf
 
 # Install ping, needed by Containernet
 RUN apt update -yq && apt install -yy -qq iputils-ping net-tools iproute2

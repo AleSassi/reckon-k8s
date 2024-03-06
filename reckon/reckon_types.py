@@ -629,6 +629,7 @@ class KubeNode ( Docker ):
         """
         dc: Container = self.d_client.containers.get(self.dname)
         dc.stop()
+        dc.remove()
     
     def restart(self):
         if not self.running:

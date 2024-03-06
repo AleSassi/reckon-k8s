@@ -1,8 +1,6 @@
 # no-op entry that exists solely so it can be patched
 apiVersion: kubeadm.k8s.io/v1beta3
 kind: JoinConfiguration
-metadata:
-  name: config
 # Add the below snippet at runtime for the control plane only!
 #controlPlane:
 #  localAPIEndpoint:
