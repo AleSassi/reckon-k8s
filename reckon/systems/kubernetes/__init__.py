@@ -48,6 +48,7 @@ class Kubernetes(t.AbstractSystem):
     def start_nodes(self, cluster):
         restarters = {}
         stoppers = {}
+        killers = {}
 
         kubecluster: list[t.KubeNode] = cluster
         control_plane = kubecluster[0]
@@ -121,11 +122,11 @@ class Kubernetes(t.AbstractSystem):
             kubenode.cmd(start_cmd, verbose=True)
 
             # We use the default arguemnt to capture the host variable semantically rather than lexically
-            stoppers[tag] = lambda host=kubenode: host.kill()
-
+            stoppers[tag] = lambda host=kubenode: host.pause()
+            killers[tag] = lambda host=kubenode: host.terminate()
             restarters[tag] = lambda host=kubenode, start_cmd=start_cmd: host.restart()
 
-        return restarters, stoppers
+        return restarters, stoppers, killers
 
     def start_client(self, client, client_id, cluster) -> t.Client:
         logging.debug("starting microclient: " + str(client_id))

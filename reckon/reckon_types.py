@@ -281,7 +281,7 @@ class AbstractSystem(ABC):
     @abstractmethod
     def start_nodes(
         self, cluster: List[MininetHost]
-    ) -> Tuple[Dict[Any, Callable[[], None]], Dict[Any, Callable[[], None]]]:
+    ) -> Tuple[Dict[Any, Callable[[], None]], Dict[Any, Callable[[], None]], Dict[Any, Callable[[], None]]]:
         pass
 
     @abstractmethod
@@ -614,7 +614,7 @@ class KubeNode ( Docker ):
             warn( '(%s exited - ignoring cmd%s)\n' % ( self, args ) )
         return None
     
-    def kill(self):
+    def pause(self):
         """
         Simulates a (recoverable) node failure
         """
@@ -622,6 +622,13 @@ class KubeNode ( Docker ):
             dc: Container = self.d_client.containers.get(self.dname)
             dc.pause() # TODO: Can we use kill here and then restart the container by reattaching it to the network??
         self.running = False
+    
+    def terminate(self):
+        """
+        Stops the container
+        """
+        dc: Container = self.d_client.containers.get(self.dname)
+        dc.stop()
     
     def restart(self):
         if not self.running:

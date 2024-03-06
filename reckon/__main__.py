@@ -43,11 +43,11 @@ if __name__ == "__main__":
 
         net, cluster, _ = topo_provider.setup()
 
-        _, stoppers = system.start_nodes(cluster)
+        _, _, killers = system.start_nodes(cluster)
 
         CLI(net)
 
-        for stopper in stoppers.values():
+        for stopper in killers.values():
             stopper()
     else:
         stoppers = {}
@@ -59,7 +59,7 @@ if __name__ == "__main__":
 
           net, cluster, clients = get_topology_provider(args).setup()
 
-          restarters, stoppers_prime = system.start_nodes(cluster)
+          restarters, stoppers_prime, killers = system.start_nodes(cluster)
           stoppers = stoppers_prime
 
           failures = failure_provider.get_failures(cluster, system, restarters, stoppers)
@@ -88,6 +88,6 @@ if __name__ == "__main__":
           p.join(max(args.duration * 10, 150))
           p.terminate()
         finally:
-          for stopper in stoppers.values():
+          for stopper in killers.values():
               stopper()
           logging.info("Finished Test")

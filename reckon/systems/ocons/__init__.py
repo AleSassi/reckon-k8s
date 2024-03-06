@@ -87,7 +87,7 @@ class Ocons(t.AbstractSystem):
                 host, start_cmd()
             )
 
-        return restarters, stoppers
+        return restarters, stoppers, stoppers
 
     def start_client(self, client, client_id, cluster) -> t.Client:
         logging.debug("starting microclient: " + str(client_id))
