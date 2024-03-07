@@ -18,8 +18,12 @@ tester: reckon
 	--network host --name reckon \
 	 cjen1/reckon:latest bash /root/scripts/run.sh python /root/scripts/tester.py
 
+.PHONY:podfiles
+podfiles:
+	make build -C podfiles
+
 .PHONY:reckon
-reckon: reckon-containernet etcd-image reckon-k8s-control reckon-k8s-worker
+reckon: podfiles reckon-containernet etcd-image reckon-k8s-control reckon-k8s-worker
 	docker build -t cjen1/reckon:latest .
 
 .PHONY: reckon-containernet

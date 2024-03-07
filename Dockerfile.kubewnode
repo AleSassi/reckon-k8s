@@ -11,7 +11,10 @@ LABEL io.x-k8s.kind.cluster="cl"
 WORKDIR /
 
 RUN mkdir -p /results/logs
+RUN mkdir -p /archives
 
 RUN touch /kind/kubeadm.conf
+ADD ./podfiles/archives /archives
+ADD ./scripts/loadimages.sh /archives
 
 CMD [ "/bin/bash" ]

@@ -114,7 +114,7 @@ class Kubernetes(t.AbstractSystem):
                 start_cmd = "source /kind/startcp.sh"
             else:
                 # Join all worker nodes!
-                start_cmd = "kubeadm join --config=/kind/kubeadm.conf --skip-phases=preflight --v=6"
+                start_cmd = "kubeadm join --config=/kind/kubeadm.conf --skip-phases=preflight --v=6 && bash /archives/loadimages.sh"
             start_cmd = self.add_stderr_logging(start_cmd, tag + ".log")
             start_cmd = self.add_stdout_logging(start_cmd, tag + ".log", verbose=True)
 
