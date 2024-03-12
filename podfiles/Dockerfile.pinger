@@ -8,4 +8,6 @@ RUN apk add --update --no-cache \
         iproute2 \
         iputils
 
-CMD ping 10.0.0.1
+RUN mkdir -p /logs
+
+CMD [ "ping", "10.0.0.1" ]
