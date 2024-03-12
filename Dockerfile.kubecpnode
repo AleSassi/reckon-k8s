@@ -5,7 +5,7 @@ ENV KIND_EXPERIMENTAL_CONTAINERD_SNAPSHOTTER=''
 ENV KUBECONFIG=/etc/kubernetes/admin.conf
 
 # Install ping, needed by Containernet
-RUN apt update -yq && apt install -yy -qq iputils-ping net-tools iproute2
+RUN apt update -yq && apt install -yy -qq iputils-ping net-tools iproute2 tcpdump
 
 LABEL io.x-k8s.kind.role="control-plane"
 LABEL io.x-k8s.kind.cluster="cl"
