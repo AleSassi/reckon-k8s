@@ -42,14 +42,20 @@ RUN apt-get update && apt-get install --no-install-recommends -yy -qq \
     locales-all \
     git
 
+# Install Kubectl
+RUN curl -LO https://dl.k8s.io/release/v1.29.2/bin/linux/arm64/kubectl
+RUN install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+# Make directory for logs
+RUN mkdir -p /results/logs
+ENV KUBECONFIG=/files/kubefiles/config
+
 # Add reckon code
 ADD . .
 ENV PYTHONPATH="/root:${PYTHONPATH}"
 ENV SHELL=/bin/bash
 
-# Make directory for logs
-RUN mkdir -p /results/logs
-
 # Add built artefacts
 ENV ETCD_UNSUPPORTED_ARCH=arm64
 COPY --from=etcd-image /reckon/systems/etcd reckon/systems/etcd
+COPY --from=k8s-image /reckon/systems/kubernetes reckon/systems/kubernetes

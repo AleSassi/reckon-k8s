@@ -707,6 +707,8 @@ class KuberNet (Containernet):
                 for worker in workers:
                     docker_vols.append(f"{worker['volume']}:/kind/nodedata/wn{i}")
                     i += 1
+                # Add a shared directory with Reckon to share config files (for clients)
+                docker_vols.append("shared_files:/kind/shared_files:rw")
 
             # Create the Node container
             kubenode = self.addDocker(node_info['name'],

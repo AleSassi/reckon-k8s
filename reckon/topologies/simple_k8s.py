@@ -58,7 +58,7 @@ class SimpleKubeTopologyProvider(t.AbstractTopologyGenerator):
         
         #hosts = [self.add_host() for _ in range(self.number_nodes)]
         #clients = [self.add_client() for _ in range(self.number_clients)]
-        clients = []
+        clients = [self.add_client()]
 
         # Set up connections between nodes (with custom parameters, different for each node)
         cp = hosts[0]
@@ -67,6 +67,7 @@ class SimpleKubeTopologyProvider(t.AbstractTopologyGenerator):
         self.net.addLink(cp, sw, delay="100ms")
         self.net.addLink(wn, sw, delay="200ms")
         self.net.addLink(wn2, sw, delay="300ms", loss=5)
+        self.net.addLink(clients[0], sw)
         #for host in hosts + clients:
         #    self.net.addLink(host, sw, delay=self.per_link_latency, loss=self.per_link_loss, jitter=self.per_link_jitter)
 

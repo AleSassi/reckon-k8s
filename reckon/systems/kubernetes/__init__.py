@@ -7,27 +7,22 @@ import reckon.reckon_types as t
 
 
 class Go(t.AbstractClient):
-    client_path = "reckon/systems/etcd/clients/go/client"
+    client_path = "reckon/systems/reckon/clients/simple/client"
 
     def __init__(self, args):
         self.ncpr = args.new_client_per_request
 
     def cmd(self, ips, client_id) -> str:
-        return "{client_path} --targets={ips} --id={client_id} --ncpr={ncpr}".format(
+        return "/bin/bash"
+        return "{client_path} --id={client_id} --ncpr={ncpr} --kubeconfig=/files/kubefiles/config".format(
             client_path=self.client_path,
-            ips=",".join(f"http://{ip}:2379" for ip in ips),
             client_id=str(client_id),
             ncpr=self.ncpr,
         )
 
 
-class GoTracer(Go):
-    client_path = "reckon/systems/etcd/clients/go-tracer/client"
-
-
 class ClientType(Enum):
     Go = "go"
-    GoTracer = "go-tracer"
 
     def __str__(self):
         return self.value
@@ -40,8 +35,6 @@ class Kubernetes(t.AbstractSystem):
     def get_client(self, args):
         if args.client == str(ClientType.Go) or args.client is None:
             return Go(args)
-        elif args.client == str(ClientType.GoTracer):
-            return GoTracer(args)
         else:
             raise Exception("Not supported client type: " + str(args.client))
 
@@ -133,14 +126,14 @@ class Kubernetes(t.AbstractSystem):
         tag = self.get_client_tag(client)
 
         cmd = self.client_class.cmd([host.IP() for host in cluster], client_id)
-        cmd = self.add_stderr_logging(cmd, tag + ".log")
+        #cmd = self.add_stderr_logging(cmd, tag + ".log")
 
         logging.debug("Starting client with: " + cmd)
         sp = client.popen(
             cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            #stdin=subprocess.PIPE,
+            #stdout=subprocess.PIPE,
+            #stderr=subprocess.DEVNULL,
             shell=True,
             bufsize=4096,
         )

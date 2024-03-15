@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"strings"
 	"time"
-	"flag"
 
 	rc_go "github.com/Cjen1/reckon/reckon/goclient"
+	rc_types "github.com/Cjen1/reckon/reckon/goclient/types"
 	"go.etcd.io/etcd/clientv3"
 )
 
@@ -42,28 +43,30 @@ func main() {
 
 	dialTimeout := 10 * time.Second
 
-	gen_cli := func() (rc_go.Client, error){
-    if (true) {
-      cli_v3, err := clientv3.New(clientv3.Config{
-        Endpoints:            endpoints,
-        //			DialTimeout:          dialTimeout,
-        //			DialKeepAliveTime:    dialTimeout / 2,
-        //			DialKeepAliveTimeout: dialTimeout * 2,
-        //			AutoSyncInterval:     dialTimeout / 2,
-      })
-      cli := rc_cli{Client:cli_v3}
-      return cli,err
-    } else {
-      cli_v3, err := clientv3.New(clientv3.Config{
-        Endpoints:            endpoints,
-        DialTimeout:          dialTimeout,
-        DialKeepAliveTime:    dialTimeout / 2,
-        DialKeepAliveTimeout: dialTimeout * 2,
-        AutoSyncInterval:     dialTimeout / 2,
-      })
-      cli := rc_cli{Client:cli_v3}
-      return cli,err
-    }
+	gen_cli := func() (rc_types.AbstractClient, error) {
+		if true {
+			cli_v3, err := clientv3.New(clientv3.Config{
+				Endpoints: endpoints,
+				//			DialTimeout:          dialTimeout,
+				//			DialKeepAliveTime:    dialTimeout / 2,
+				//			DialKeepAliveTimeout: dialTimeout * 2,
+				//			AutoSyncInterval:     dialTimeout / 2,
+			})
+			cli := rc_cli{Client: cli_v3}
+			return cli, err
+		} else {
+			cli_v3, err := clientv3.New(clientv3.Config{
+				Endpoints:            endpoints,
+				DialTimeout:          dialTimeout,
+				DialKeepAliveTime:    dialTimeout / 2,
+				DialKeepAliveTimeout: dialTimeout * 2,
+				AutoSyncInterval:     dialTimeout / 2,
+			})
+			cli := rc_cli{Client: cli_v3}
+			return cli, err
+		}
 	}
-	rc_go.Run(gen_cli, *f_client_id, *f_new_client_per_request)
+
+	rc_cli := rc_go.RC_KVS_Client{}
+	rc_cli.Run(gen_cli, *f_client_id, *f_new_client_per_request)
 }

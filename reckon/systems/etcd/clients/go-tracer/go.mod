@@ -24,4 +24,4 @@ require (
 	google.golang.org/grpc v1.26.0 // indirect
 )
 
-replace github.com/Cjen1/reckon/reckon/goclient => ../../../../goclient
+replace github.com/Cjen1/reckon/reckon/goclient => ../../../../goclient/src/rc_go

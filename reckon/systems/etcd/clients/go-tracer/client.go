@@ -2,21 +2,22 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"strings"
-	"time"
-	"flag"
 	"sync"
+	"time"
 
 	rc_go "github.com/Cjen1/reckon/reckon/goclient"
+	rc_types "github.com/Cjen1/reckon/reckon/goclient/types"
 	"go.etcd.io/etcd/clientv3"
 )
 
 type myClient struct {
-	clients []*clientv3.Client
+	clients   []*clientv3.Client
 	endpoints []string
-	r_id int
-	mtx sync.Mutex
+	r_id      int
+	mtx       sync.Mutex
 }
 
 func (c *myClient) get_client() (*clientv3.Client, string) {
@@ -25,7 +26,7 @@ func (c *myClient) get_client() (*clientv3.Client, string) {
 	c.r_id = c.r_id + 1
 	c.mtx.Unlock()
 	id := r_id % len(c.clients)
-	return c.clients[id],c.endpoints[id]
+	return c.clients[id], c.endpoints[id]
 }
 
 type rc_cli struct {
@@ -33,7 +34,7 @@ type rc_cli struct {
 }
 
 func (c rc_cli) Close() {
-	for _, c := range(c.Client.clients) {
+	for _, c := range c.Client.clients {
 		c.Close()
 	}
 }
@@ -63,9 +64,9 @@ func main() {
 
 	dialTimeout := 10 * time.Second
 
-	gen_cli := func() (rc_go.Client, error){
+	gen_cli := func() (rc_types.AbstractClient, error) {
 		clients := make([]*clientv3.Client, len(endpoints))
-		for i, endpoint := range(endpoints) {
+		for i, endpoint := range endpoints {
 			client, err := clientv3.New(clientv3.Config{
 				Endpoints:            []string{endpoint},
 				DialTimeout:          dialTimeout,
@@ -79,14 +80,15 @@ func main() {
 			clients[i] = client
 		}
 		cli := rc_cli{
-			Client:&myClient{
-				clients:clients,
-				endpoints:endpoints,
-				r_id:0,
-				mtx:sync.Mutex{},
+			Client: &myClient{
+				clients:   clients,
+				endpoints: endpoints,
+				r_id:      0,
+				mtx:       sync.Mutex{},
 			},
 		}
-		return cli,nil
+		return cli, nil
 	}
-	rc_go.Run(gen_cli, *f_client_id, *f_new_client_per_request)
+	rc_cli := rc_go.RC_KVS_Client{}
+	rc_cli.Run(gen_cli, *f_client_id, *f_new_client_per_request)
 }

@@ -14,3 +14,5 @@ do
         cp "/etc/kubernetes/${file}" "${dir}/${file}"
     done
 done
+
+cp "/etc/kubernetes/admin.conf" "/kind/shared_files/config"

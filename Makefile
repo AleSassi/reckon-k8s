@@ -9,6 +9,7 @@ run: reckon
 	-v ./files/kubernetes:/etc/kubernetes \
 	-v /lib/modules:/lib/modules:ro \
 	-v /var \
+	-v shared_files:/files/kubefiles:rw \
 	 cjen1/reckon:latest bash
 
 .PHONY: tester
@@ -23,7 +24,7 @@ podfiles:
 	make build -C podfiles
 
 .PHONY:reckon
-reckon: podfiles reckon-containernet etcd-image reckon-k8s-control reckon-k8s-worker
+reckon: podfiles reckon-containernet etcd-image k8s-image reckon-k8s-control reckon-k8s-worker
 	docker build -t cjen1/reckon:latest .
 
 .PHONY: reckon-containernet
