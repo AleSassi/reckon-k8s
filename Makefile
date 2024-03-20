@@ -10,6 +10,7 @@ run: reckon
 	-v /lib/modules:/lib/modules:ro \
 	-v /var \
 	-v shared_files:/files/kubefiles:rw \
+	-v kubenode_results:/results/logs/kubenodes:rw \
 	 cjen1/reckon:latest bash
 
 .PHONY: tester

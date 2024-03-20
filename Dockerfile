@@ -48,6 +48,7 @@ RUN install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 
 # Make directory for logs
 RUN mkdir -p /results/logs
+RUN mkdir -p /results/logs/kubenodes
 ENV KUBECONFIG=/files/kubefiles/config
 
 # Add reckon code

@@ -12,6 +12,7 @@ LABEL io.x-k8s.kind.cluster="cl"
 
 WORKDIR /
 
+RUN mkdir -p /results
 RUN mkdir -p /results/logs
 RUN mkdir -p /archives
 
@@ -20,5 +21,7 @@ ADD ./scripts/copyconfigs.sh /kind
 ADD ./podfiles/archives /archives
 ADD ./scripts/loadimages.sh /archives
 RUN touch /kind/kubeadm.conf
+
+RUN echo "tcpdump -i any -w /results/logs/cp-dump.pcap & disown" > /startdump.sh
 
 CMD [ "/bin/bash" ]
