@@ -108,6 +108,9 @@ class Etcd(t.AbstractSystem):
         )
         return t.Client(sp.stdin, sp.stdout, client_id)
 
+    def prepare_test_start(self, cluster: t.List[t.Host]) -> t.Result | None:
+        return None
+
     def parse_resp(self, resp):
         logging.debug("--------------------------------------------------")
         logging.debug(resp)

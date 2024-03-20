@@ -46,7 +46,7 @@ class UniformKeys(t.AbstractKeyGenerator):
                 ]
 
     @property
-    def workload(self) -> Iterator[Union[t.Read, t.Write]]:
+    def workload(self) -> Iterator[Union[t.Read, t.Write, t.Create, t.Update, t.Delete]]:
         i = 0
         while True:
             yield (

@@ -1,4 +1,6 @@
 from enum import Enum
+import shutil
+import subprocess
 from typing import Union, Tuple, List, Iterator, Any, NewType, Dict, Callable, IO
 from typing_extensions import Literal
 import logging
@@ -23,6 +25,10 @@ from docker.models.containers import Container
 class OperationKind(str, Enum):
     Write = "write"
     Read = "read"
+    Create = "create"
+    Update = "update"
+    Delete = "delete"
+    Other = "other"
 
     def __str__(self):
         return self.value
@@ -38,9 +44,24 @@ class Read(BaseModel):
     kind: Literal[OperationKind.Read]
     key: str
 
+class Create(BaseModel):
+    kind: Literal[OperationKind.Create]
+    key: str
+    value: str
+
+class Update(BaseModel):
+    kind: Literal[OperationKind.Update]
+    key: str
+    value: str
+
+
+class Delete(BaseModel):
+    kind: Literal[OperationKind.Delete]
+    key: str
+
 
 class Operation(BaseModel):
-    payload: Union[Write, Read] = Field(..., descriminator="kind")
+    payload: Union[Write, Read, Create, Update, Delete] = Field(..., descriminator="kind")
     time: float
 
 
@@ -138,7 +159,7 @@ class AbstractKeyGenerator(ABC):
         return []
 
     @abstractproperty
-    def workload(self) -> Iterator[Union[Read, Write]]:
+    def workload(self) -> Iterator[Union[Read, Write, Create, Update, Delete]]:
         """
         Returns an iterator through the workload from time = 0
 
@@ -269,6 +290,10 @@ class AbstractSystem(ABC):
         time = self.creation_time
         log = self.log_location
         return f"{cmd} | tee {log}/{time}_{tag}.out" if verbose else f"{cmd} > {log}/{time}_{tag}.out"
+
+    @abstractmethod
+    def prepare_test_start(self, cluster: List[MininetHost]) -> Result | None:
+        pass
 
     @abstractmethod
     def stat(self, host: MininetHost) -> str:
@@ -520,6 +545,7 @@ class KubeNode ( Docker ):
         self.dcinfo = self.dcli.inspect_container(self.dc)
         self.did = self.dcinfo.get("Id")
         self.dname = "%s.%s" % (self.dnameprefix, name)
+        self.dcont: Container | None = self.d_client.containers.get(self.dname)
 
         # call original Node.__init__
         Host.__init__(self, name, **kwargs)
@@ -600,18 +626,24 @@ class KubeNode ( Docker ):
            cmd: string"""
         verbose = kwargs.get( 'verbose', False )
         privileged = kwargs.get('privileged', False)
+        detached = kwargs.get('detached', False)
         log = info if verbose else debug
         log( '*** %s : %s\n' % ( self.name, args ) )
-        if self.shell:
-            self.shell.poll()
-            if self.shell.returncode is not None:
-                print("shell died on ", self.name)
-                self.shell = None
-                self.startShell(privileged=privileged)
-            self.sendCmd( *args, **kwargs )
-            return self.waitOutput( verbose )
+        if detached:
+            # Run Docker exec detached!
+            self.dcont.exec_run(args[0], verbose, verbose, detach=True)
         else:
-            warn( '(%s exited - ignoring cmd%s)\n' % ( self, args ) )
+            if self.shell:
+                self.shell.poll()
+                if self.shell.returncode is not None:
+                    print("shell died on ", self.name)
+                    print(f"Return code: {self.shell.returncode}")
+                    self.shell = None
+                    self.startShell(privileged=privileged)
+                self.sendCmd( *args, **kwargs )
+                return self.waitOutput( verbose )
+            else:
+                warn( '(%s exited - ignoring cmd%s)\n' % ( self, args ) )
         return None
     
     def pause(self):
@@ -688,6 +720,9 @@ class KuberNet (Containernet):
             for _ in range(workers):
                 self._add_worker_node()
         
+        # Cleanup the logs directory
+        self._deleteDirContent("/results/logs/kubenodes")
+        
         # Preconfigure all nodes
         for i in range(1 + workers):
             # Generate the kubeadm config file for the node
@@ -698,6 +733,7 @@ class KuberNet (Containernet):
             # Determine the shared folders/volumes for the node
             docker_vols = ["/lib/modules:/lib/modules:ro", # Required by the KinD node image
                            "/var", # Required by the KinD node image
+                           "kubenode_results:/results/logs:rw",
                            f"kubefiles_{'cp' if is_control else 'wn'+str(worker_idx + 1)}:/etc/kubernetes:rw"]
             if is_control:
                 # The control plane mounts the Docker volume of each worker's /etc/kubernetes dir
@@ -721,3 +757,14 @@ class KuberNet (Containernet):
             kubenode.docker_vols = docker_vols
             nodes.append(kubenode)
         return nodes
+
+    def _deleteDirContent(self, dirPath: str):
+        for filename in os.listdir(dirPath):
+            file_path = os.path.join(dirPath, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print('Failed to delete %s. Reason: %s' % (file_path, e))

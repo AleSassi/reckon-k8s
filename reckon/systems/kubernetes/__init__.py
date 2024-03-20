@@ -1,19 +1,19 @@
 from enum import Enum
 import subprocess
 import logging
+import time
 import yaml
 
 import reckon.reckon_types as t
 
 
 class Go(t.AbstractClient):
-    client_path = "reckon/systems/reckon/clients/simple/client"
+    client_path = "reckon/systems/kubernetes/clients/simple/client"
 
     def __init__(self, args):
         self.ncpr = args.new_client_per_request
 
     def cmd(self, ips, client_id) -> str:
-        return "/bin/bash"
         return "{client_path} --id={client_id} --ncpr={ncpr} --kubeconfig=/files/kubefiles/config".format(
             client_path=self.client_path,
             client_id=str(client_id),
@@ -126,14 +126,14 @@ class Kubernetes(t.AbstractSystem):
         tag = self.get_client_tag(client)
 
         cmd = self.client_class.cmd([host.IP() for host in cluster], client_id)
-        #cmd = self.add_stderr_logging(cmd, tag + ".log")
+        cmd = self.add_stderr_logging(cmd, tag + ".log")
 
         logging.debug("Starting client with: " + cmd)
         sp = client.popen(
             cmd,
-            #stdin=subprocess.PIPE,
-            #stdout=subprocess.PIPE,
-            #stderr=subprocess.DEVNULL,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             shell=True,
             bufsize=4096,
         )
@@ -148,9 +148,22 @@ class Kubernetes(t.AbstractSystem):
             endpoint_ip = endpoint.split(",")[0].split("://")[-1].split(":")[0]
             if endpoint.split(",")[4].strip() == "true":
                 return endpoint_ip
+            
+    def prepare_test_start(self, cluster: t.List[t.Host]) -> t.Result | None:
+        # Start tcpdump to analyze incoming K8s packets
+        logging.debug("PREPARE: Preparing the cluster for the test...")
+        kubecluster: list[t.KubeNode] = cluster
+        cp = None
+        for c in kubecluster:
+            if c.is_control:
+                cp = c
+        submitted = float(time.time_ns()) / 1e9
+        cp.cmd("tcpdump -i any -w /results/logs/cp-dump.pcap", verbose=True, detached=True)
+        ended = float(time.time_ns()) / 1e9
+        logging.debug("PREPARE: done")
+        return t.Result(kind="result", t_submitted=submitted, t_result=ended, result="tcpdump started", op_kind=t.OperationKind.Other, clientid="-1", other={})
 
     def get_leader(self, cluster):
-        ips = [host.IP() for host in cluster]
         return cluster[0]
 
     def stat(self, host: t.MininetHost) -> str:

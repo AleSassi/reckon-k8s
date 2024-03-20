@@ -1,10 +1,12 @@
 from enum import Enum
 from typing import List, Iterator
 import itertools as it
+from reckon.workload.uniform_crud import UniformCRUD
 from reckon.workload.uniform import UniformKeys, UniformArrival
 from reckon.workload.poisson import PoissonArrival
 
 import reckon.reckon_types as t
+import reckon.systems as s
 
 class KeyType(Enum):
     Uniform = "uniform"
@@ -50,6 +52,34 @@ def register_ops_args(parser):
         type=float,
         default=1,
         help="percentage of client's write operation, defaults to %(default)s",
+    )
+
+    workload_group.add_argument(
+        "--create-ratio",
+        type=float,
+        default=0,
+        help="percentage of a CRUD client's create operation (if requested by the system, currently only Kubernetes is CRUD), defaults to %(default)s",
+    )
+
+    workload_group.add_argument(
+        "--read-ratio",
+        type=float,
+        default=0.75,
+        help="percentage of client's read operation (if requested by the system, currently only Kubernetes is CRUD), defaults to %(default)s",
+    )
+
+    workload_group.add_argument(
+        "--update-ratio",
+        type=float,
+        default=0.25,
+        help="percentage of client's update operation (if requested by the system, currently only Kubernetes is CRUD), defaults to %(default)s",
+    )
+
+    workload_group.add_argument(
+        "--delete-ratio",
+        type=float,
+        default=0,
+        help="percentage of client's delete operation (if requested by the system, currently only Kubernetes is CRUD), defaults to %(default)s",
     )
 
     workload_group.add_argument(
@@ -99,14 +129,21 @@ class Workload(t.AbstractWorkload):
     return wo_iter
 
 def get_key_provider(args) -> t.AbstractKeyGenerator:
-  if args.key_distribution is KeyType.Uniform:
-    return UniformKeys(
-            write_ratio=args.write_ratio,
-            max_key=args.max_key,
-            payload_size=args.payload_size,
-            )
-  else:
-    raise Exception("Not supported key distribution: " + str(args.key_distribution))
+    if args.key_distribution is KeyType.Uniform:
+        if args.system_type is s.SystemType.Kubernetes:
+            return UniformCRUD(
+                op_ratio=(args.create_ratio, args.read_ratio, args.update_ratio, args.delete_ratio),
+                max_key=args.max_key,
+                )
+        else:
+            return UniformKeys(
+                    write_ratio=args.write_ratio,
+                    max_key=args.max_key,
+                    payload_size=args.payload_size,
+                    restrict_RW=args.system is not s.SystemType.Kubernetes
+                    )
+    else:
+        raise Exception("Not supported key distribution: " + str(args.key_distribution))
 
 def get_arrival_provider(args) -> t.AbstractArrivalProcess:
   if args.arrival_process is ArrivalType.Uniform:

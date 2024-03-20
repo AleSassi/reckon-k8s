@@ -1,3 +1,4 @@
+import json
 import logging
 from threading import Thread
 import time
@@ -5,7 +6,7 @@ import sys
 import selectors
 import itertools as it
 
-from typing import List
+from typing import List, Tuple
 import itertools as it
 
 import reckon.reckon_types as t
@@ -13,10 +14,17 @@ import reckon.reckon_types as t
 from tqdm import tqdm
 
 
-def preload(ops_provider: t.AbstractWorkload, duration: float) -> int:
+def preload(ops_provider: t.AbstractWorkload, duration: float) -> Tuple[int, list[dict]]:
     logging.debug("PRELOAD: begin")
 
+    ops_log: list[dict] = []
     for op, client in zip(ops_provider.prerequisites, it.cycle(ops_provider.clients)):
+        rcclient: t.Client = client
+        ops_log.append({
+            "operation": op.json(),
+            "type": "prereq",
+            "client": rcclient.id
+        })
         client.send(t.preload(prereq=True, operation=op))
 
     sim_t = 0
@@ -27,6 +35,11 @@ def preload(ops_provider: t.AbstractWorkload, duration: float) -> int:
                 break
 
             total_reqs += 1
+            ops_log.append({
+                "operation": op.json(),
+                "type": "req",
+                "client": rcclient.id
+            })
             client.send(t.preload(prereq=False, operation=op))
 
             pbar.update(op.time - sim_t)
@@ -36,7 +49,7 @@ def preload(ops_provider: t.AbstractWorkload, duration: float) -> int:
         client.send(t.finalise())
 
     logging.debug("PRELOAD: end")
-    return total_reqs
+    return total_reqs, ops_log
 
 
 def ready(clients: List[t.Client]):
@@ -128,12 +141,12 @@ def test_steps(
     workload: t.AbstractWorkload,
     failures: List[t.AbstractFault],
     duration: float,
-) -> t.Results:
+) -> Tuple[t.Results, list[dict]]:
 
     assert(len(failures) >= 2)
 
     workload.clients = clients
-    total_reqs = preload(workload, duration)
+    total_reqs, req_log = preload(workload, duration)
     ready(clients)
 
     t_execute = Thread(
@@ -147,7 +160,7 @@ def test_steps(
 
     t_execute.join()
 
-    return resps
+    return resps, req_log
 
 
 def run_test(
@@ -169,9 +182,14 @@ def run_test(
     ]
     logging.debug("Microclients started")
 
-    resps = test_steps(clients, ops_provider, failures, duration)
+    pre_res = system.prepare_test_start(cluster=cluster)
+
+    resps, req_log = test_steps(clients, ops_provider, failures, duration)
+    resps.__root__.insert(0, pre_res)
 
     logging.debug(f"COLLATE: received, writing to {test_results_location}")
-    with open(test_results_location, "w") as fres:
+    with open(f"{test_results_location}/test_resps.json", "w") as fres:
         fres.write(resps.json())
+    with open(f"{test_results_location}/test_ops.json", "w") as fres:
+        fres.write(json.dumps(req_log))
     logging.debug("COLLATE: end")

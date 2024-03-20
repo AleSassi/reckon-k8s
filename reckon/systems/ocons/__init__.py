@@ -132,6 +132,9 @@ class Ocons(t.AbstractSystem):
     def stat(self, _):
         pass
 
+    def prepare_test_start(self, cluster: t.List[t.Host]) -> t.Result | None:
+        return None
+
 class OconsPaxos(Ocons):
     system_kind = "paxos"
 class OconsRaft(Ocons):

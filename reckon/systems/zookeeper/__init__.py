@@ -181,5 +181,8 @@ class Zookeeper(t.AbstractSystem):
         assert(ret)
         return ret
 
+    def prepare_test_start(self, cluster: t.List[t.Host]) -> t.Result | None:
+        return None
+
 class ZookeeperFLE(Zookeeper):
     electionAlg = 3 # Use FastLeaderElection
