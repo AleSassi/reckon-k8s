@@ -16,7 +16,7 @@ type CRUDClient interface {
 	Delete(k string) (string, error)
 }
 
-type rc_crud_client struct{}
+type RC_CRUD_Client struct{}
 
 func create(cli CRUDClient, key string, value string, clientid string, expected_start float64) types.Jsonmap {
 	return utils.Perform_Client_Operation(func() (string, error) {
@@ -43,17 +43,17 @@ func delete(cli CRUDClient, key string, clientid string, expected_start float64)
 	}, "delete", clientid, expected_start)
 }
 
-func (rc_crud_client) Perform(op types.Operation, cli types.AbstractClient, clientid string, test_start_time float64, new_client_per_request bool, client_gen func() (types.AbstractClient, error)) types.Jsonmap {
+func (RC_CRUD_Client) Perform(op types.Operation, cli types.AbstractClient, clientid string, test_start_time float64, new_client_per_request bool, client_gen func() (types.AbstractClient, error)) types.Jsonmap {
 	//Create a new client if desired
-	cli_is_kvs := false
+	cli_is_crud := false
 	switch cli.(type) {
 	case CRUDClient:
-		cli_is_kvs = true
+		cli_is_crud = true
 	default:
 		break
 	}
-	if !cli_is_kvs {
-		fmt.Fprintf(os.Stderr, "Error: Attempting to use KVS Client without a KVS client being generated\n")
+	if !cli_is_crud {
+		fmt.Fprintf(os.Stderr, "Error: Attempting to use CRUD Client without a CRUD client being generated\n")
 		os.Exit(1)
 	}
 
@@ -87,6 +87,6 @@ func (rc_crud_client) Perform(op types.Operation, cli types.AbstractClient, clie
 	}
 }
 
-func (crud rc_crud_client) Run(client_gen func() (types.AbstractClient, error), clientid string, new_client_per_request bool) {
+func (crud RC_CRUD_Client) Run(client_gen func() (types.AbstractClient, error), clientid string, new_client_per_request bool) {
 	Run_Client(crud, client_gen, clientid, new_client_per_request)
 }
