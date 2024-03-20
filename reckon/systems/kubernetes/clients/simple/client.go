@@ -18,7 +18,6 @@ limitations under the License.
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -33,6 +32,7 @@ import (
 	v1 "k8s.io/client-go/kubernetes/typed/apps/v1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/flowcontrol"
 	"k8s.io/client-go/util/retry"
 
 	rc_go "github.com/Cjen1/reckon/reckon/goclient"
@@ -63,7 +63,15 @@ func (c rc_k8s_cli) Create(k string, v string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Rename the deployment
 	deployment.SetName(k)
+	//deployment.SetNamespace(k)
+	labels := deployment.GetLabels()
+	labels["app"] = k
+	deployment.SetLabels(labels)
+	deployment.Spec.Selector.MatchLabels["app"] = k
+	deployment.Spec.Template.ObjectMeta.Labels["app"] = k
+	deployment.Spec.Template.Spec.TopologySpreadConstraints[0].LabelSelector.MatchLabels["app"] = k
 
 	// Create Deployment
 	result, err := c.Client.Create(context.TODO(), deployment, metav1.CreateOptions{})
@@ -139,6 +147,7 @@ func main() {
 			fmt.Println("Error when building config")
 			return nil, err
 		}
+		config.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(50, 250)
 		clientset, err := kubernetes.NewForConfig(config)
 		if err != nil {
 			fmt.Println("Error when creating clientset")
@@ -151,10 +160,11 @@ func main() {
 		return rc_k8s_cli{App: app, Core: core, Client: deploymentsClient}, nil
 	}
 
-	rc_cli := rc_go.RC_KVS_Client{}
+	rc_cli := rc_go.RC_CRUD_Client{}
 	rc_cli.Run(gen_cli, *f_client_id, *f_new_client_per_request)
 }
 
+/*
 func TestClient_Interactive(gen_cli func() (rc_types.AbstractClient, error)) {
 	// Test create deployment
 	cli, err := gen_cli()
@@ -216,6 +226,7 @@ func prompt() {
 	}
 	fmt.Println()
 }
+*/
 
 func int32Ptr(i int32) *int32 {
 	return &i
