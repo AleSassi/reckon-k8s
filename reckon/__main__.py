@@ -27,7 +27,7 @@ if __name__ == "__main__":
     arg_group = parser.add_argument_group("benchmark")
     arg_group.add_argument("-d", action="store_true", help="Debug mode")
     arg_group.add_argument("--duration", type=float, default=60)
-    arg_group.add_argument("--result-location", default="test.res")
+    arg_group.add_argument("--result-location", default="/results")
 
     args = parser.parse_args()
 
@@ -51,6 +51,7 @@ if __name__ == "__main__":
             stopper()
     else:
         stoppers = {}
+        killers = {}
         try:
           system = get_system(args)
           topo_provider = get_topology_provider(args)
