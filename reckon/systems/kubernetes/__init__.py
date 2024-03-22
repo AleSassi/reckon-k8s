@@ -37,6 +37,16 @@ class Kubernetes(t.AbstractSystem):
             return Go(args)
         else:
             raise Exception("Not supported client type: " + str(args.client))
+        
+    def add_stderr_logging(self, cmd: str, tag: str):
+        time = self.creation_time
+        log = "/results/logs"
+        return f"{cmd} 2> {log}/{time}_{tag}.err"
+
+    def add_stdout_logging(self, cmd: str, tag: str, verbose: bool=False):
+        time = self.creation_time
+        log = "/results/logs"
+        return f"{cmd} | tee {log}/{time}_{tag}.out" if verbose else f"{cmd} > {log}/{time}_{tag}.out"
 
     def start_nodes(self, cluster):
         restarters = {}

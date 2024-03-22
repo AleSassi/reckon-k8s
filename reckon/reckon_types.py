@@ -1,4 +1,5 @@
 from enum import Enum
+import math
 import shutil
 import subprocess
 from typing import Union, Tuple, List, Iterator, Any, NewType, Dict, Callable, IO
@@ -348,8 +349,44 @@ class AbstractFailureGenerator(ABC):
     ) -> List[AbstractFault]:
         pass
 
+class LinkSpec(BaseModel):
+    n_from: str
+    n_to: str
+    latency_ms: float | None
+    loss_perc: float | None
+    jitter_ms: float | None
+
+class NetSpec(BaseModel):
+    __root__: List[LinkSpec]
 
 class AbstractTopologyGenerator(ABC):
+    def __init__(self, number_nodes, number_clients, link_latency=None, link_loss=None, link_jitter=None, link_specs:NetSpec|None=None):
+        self.number_nodes = number_nodes
+        self.number_clients = number_clients
+
+        per_link_latency = None if not link_latency else link_latency
+        per_link_jitter = link_jitter if (link_jitter is not None and link_jitter > 0) else None
+        per_link_loss = None if not link_loss else (1 - math.sqrt(1 - link_loss / 100)) * 100
+        if per_link_loss == 0:
+            per_link_loss = None
+
+        self.link_specs = link_specs if not None else NetSpec(__root__=[])
+        self.default_spec = LinkSpec(n_from="*", n_to="*", latency_ms=per_link_latency, loss_perc=per_link_loss, jitter_ms=per_link_jitter)
+
+        self.switch_num = 0
+        self.host_num = 0
+        self.client_num = 0
+    
+    def get_link_spec(self, n_from: str, n_to: str) -> LinkSpec:
+        spec = self.default_spec
+        for sp in self.link_specs.__root__:
+            if (sp.n_from == n_from and sp.n_to == n_to) or (sp.n_from == n_to and sp.n_to == n_from):
+                spec = sp
+                break
+        if spec.loss_perc == 0:
+            spec.loss_perc = None
+        return spec
+
     @abstractmethod
     def setup(self) -> Tuple[Mininet, List[MininetHost], List[MininetHost]]:
         pass

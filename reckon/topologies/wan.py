@@ -11,31 +11,24 @@ setLogLevel("info")
 
 
 class WanTopologyProvider(t.AbstractTopologyGenerator):
-    def __init__(self, number_nodes, link_latency=None, link_loss=None, link_jitter=None):
-        self.number_nodes = number_nodes
-
+    def __init__(self, number_nodes, number_clients, link_latency=None, link_loss=None, link_jitter=None, link_specs: t.NetSpec | None = None):
         # Since we have a star topology we use link_latency = link_latency / 2
-        self.per_link_latency = (
-                None if not link_latency else f"{link_latency / 2}ms"
+        per_link_latency = (
+                None if not link_latency else link_latency / 2
         )
-
-        self.per_link_jitter = (
-                None if not link_jitter else f"{math.sqrt(((link_jitter * link_latency) ** 2) / 2)}ms"
+        
+        per_link_jitter = (
+                None if not link_jitter else math.sqrt(((link_jitter * link_latency) ** 2) / 2)
         ) if (link_jitter is not None and link_jitter > 0) else None
-
-        print(f"Per link jitter = {self.per_link_jitter}")
 
         # since we have 2 links, when we want the abstraction of one direct link
         # we use link_loss = 1 - sqrt(1 - L)
-        self.per_link_loss = (
+        per_link_loss = (
             None if not link_loss else (1 - math.sqrt(1 - link_loss / 100)) * 100
         )
-        if self.per_link_loss == 0:
-            self.per_link_loss = None
-
-        self.switch_num = 0
-        self.host_num = 0
-        self.client_num = 0
+        if per_link_loss == 0:
+            per_link_loss = None
+        super().__init__(number_nodes, number_clients, per_link_latency, per_link_loss, per_link_jitter, link_specs)
 
     def add_switch(self):
         name = "s%s" % str(self.switch_num + 1)
@@ -62,15 +55,18 @@ class WanTopologyProvider(t.AbstractTopologyGenerator):
             client = self.add_client()
             sw = self.add_switch()
 
-            self.net.addLink(sw, host)
-            self.net.addLink(sw, client)
+            spec = self.get_link_spec(sw, host)
+            self.net.addLink(sw, host, delay=None if spec.latency_ms is None else f"{spec.latency_ms}ms", loss=spec.loss_perc, jitter=None if spec.jitter_ms is None else f"{spec.jitter_ms}ms")
+            spec = self.get_link_spec(sw, client)
+            self.net.addLink(sw, client, delay=None if spec.latency_ms is None else f"{spec.latency_ms}ms", loss=spec.loss_perc, jitter=None if spec.jitter_ms is None else f"{spec.jitter_ms}ms")
 
             return (host, client, sw)
 
         clusters = [create_cluster() for _ in range(self.number_nodes)]
 
         for _, _, swc in clusters:
-            self.net.addLink(sw, swc, delay=self.per_link_latency, loss=self.per_link_loss, jitter=self.per_link_jitter)
+            spec = self.get_link_spec(sw, swc)
+            self.net.addLink(sw, swc, delay=None if spec.latency_ms is None else f"{spec.latency_ms}ms", loss=spec.loss_perc, jitter=None if spec.jitter_ms is None else f"{spec.jitter_ms}ms")
 
         hosts = [host for host, _, _ in clusters]
         clients = [client for _, client, _ in clusters]

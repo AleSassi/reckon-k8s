@@ -1,4 +1,5 @@
 from enum import Enum
+import json
 from reckon.topologies.simple import SimpleTopologyProvider
 from reckon.topologies.wan import WanTopologyProvider
 from reckon.topologies.simple_k8s import SimpleKubeTopologyProvider
@@ -44,11 +45,19 @@ def register_topo_args(parser):
         default=0,
     )
 
+    topo_group.add_argument(
+        "--net-spec",
+        type=str,
+        default="[]",
+        help="A JSON string describing a list of network links with their custom per-link attributes"
+    )
+
 
     topo_group.add_argument("--link-latency", type=float, default=20)
 
 
 def get_topology_provider(args) -> t.AbstractTopologyGenerator:
+    net_spec = t.NetSpec.parse_obj(json.loads(args.net_spec))
     if args.topo_type is TopologyType.Simple:
         return SimpleTopologyProvider(
             args.number_nodes,
@@ -56,6 +65,7 @@ def get_topology_provider(args) -> t.AbstractTopologyGenerator:
             args.link_latency,
             args.link_loss,
             args.link_jitter,
+            net_spec,
         )
     elif args.topo_type is TopologyType.Wan:
         return WanTopologyProvider(
@@ -63,6 +73,7 @@ def get_topology_provider(args) -> t.AbstractTopologyGenerator:
             args.link_latency,
             args.link_loss,
             args.link_jitter,
+            net_spec,
         )
     elif args.topo_type is TopologyType.Simple_K8s:
         return SimpleKubeTopologyProvider(
@@ -71,6 +82,7 @@ def get_topology_provider(args) -> t.AbstractTopologyGenerator:
             args.link_latency,
             args.link_loss,
             args.link_jitter,
+            net_spec,
         )
     else:
         raise Exception("Not supported distribution type: " + str(args.topo_type))
