@@ -37,7 +37,7 @@ class UniformKeys(t.AbstractKeyGenerator):
         return self._rng.random() < self._write_ratio
 
     @property
-    def prerequisites(self) -> List[t.Write]:
+    def prerequisites(self) -> List[t.Write | t.Create]:
         return [
                 t.Write(
                     kind=t.OperationKind.Write, key=self._new_key(k), value=""

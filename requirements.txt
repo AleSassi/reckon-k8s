@@ -4,3 +4,4 @@ pytest
 pydantic==1.*
 pandas
 pyyaml
+gitpython

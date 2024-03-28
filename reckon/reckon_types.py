@@ -62,7 +62,7 @@ class Delete(BaseModel):
 
 
 class Operation(BaseModel):
-    payload: Union[Write, Read, Create, Update, Delete] = Field(..., descriminator="kind")
+    payload: Union[Write, Read, Create, Update, Delete] = Field(..., discriminator="kind")
     time: float
 
 
@@ -156,7 +156,7 @@ class Results(BaseModel):
 
 class AbstractKeyGenerator(ABC):
     @abstractproperty
-    def prerequisites(self) -> List[Write]:
+    def prerequisites(self) -> List[Write | Create]:
         return []
 
     @abstractproperty

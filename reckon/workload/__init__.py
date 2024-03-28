@@ -1,4 +1,5 @@
 from enum import Enum
+from time import time
 from typing import List, Iterator
 import itertools as it
 from reckon.workload.uniform_crud import UniformCRUD
@@ -96,6 +97,20 @@ def register_ops_args(parser):
         help="upper bound of write operation's payload size in bytes, defaults to %(default)s",
     )
 
+    workload_group.add_argument(
+       "--key-gen-seed",
+        type=int,
+        default=int(time),
+        help="The seed used when initializing the RNG for the key generator. Defaults to time().",
+    )
+
+    workload_group.add_argument(
+       "--arrival-seed",
+        type=int,
+        default=int(time),
+        help="The seed used when initializing the RNG for the arrival process. Defaults to time().",
+    )
+
 class Workload(t.AbstractWorkload):
   def __init__(self, keys : t.AbstractKeyGenerator, proc : t.AbstractArrivalProcess):
     self._keys = keys
@@ -134,13 +149,15 @@ def get_key_provider(args) -> t.AbstractKeyGenerator:
             return UniformCRUD(
                 op_ratio=(args.create_ratio, args.read_ratio, args.update_ratio, args.delete_ratio),
                 max_key=args.max_key,
+                rand_seed=args.key_gen_seed if args.key_gen_seed is not None else int(time())
                 )
         else:
             return UniformKeys(
                     write_ratio=args.write_ratio,
                     max_key=args.max_key,
                     payload_size=args.payload_size,
-                    restrict_RW=args.system is not s.SystemType.Kubernetes
+                    restrict_RW=args.system is not s.SystemType.Kubernetes,
+                    rand_seed=args.key_gen_seed if args.key_gen_seed is not None else int(time())
                     )
     else:
         raise Exception("Not supported key distribution: " + str(args.key_distribution))
@@ -149,7 +166,7 @@ def get_arrival_provider(args) -> t.AbstractArrivalProcess:
   if args.arrival_process is ArrivalType.Uniform:
     return UniformArrival(rate = args.rate)
   elif args.arrival_process is ArrivalType.Poisson:
-    return PoissonArrival(rate = args.rate)
+    return PoissonArrival(rate = args.rate, rand_seed=args.arrival_seed if args.arrival_seed is not None else int(time()))
   else:
     raise Exception("Not supported arrival process: " + str(args.key_distribution))
 

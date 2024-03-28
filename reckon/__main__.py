@@ -1,23 +1,40 @@
 import argparse
+from pathlib import Path
 
 from reckon.client_runner import run_test
-from reckon.workload   import register_ops_args,     get_ops_provider
-from reckon.failures   import register_failure_args, get_failure_provider
-from reckon.topologies import register_topo_args,    get_topology_provider
-from reckon.systems    import register_system_args,  get_system
+from reckon.workload   import register_ops_args,     get_ops_provider, ArrivalType, KeyType
+from reckon.failures   import register_failure_args, get_failure_provider, FailureType
+from reckon.topologies import register_topo_args,    get_topology_provider, TopologyType
+from reckon.systems    import register_system_args,  get_system, SystemType
 
 import logging, time, os
+
+import json, git
 
 logging.basicConfig(
   format="%(asctime)s %(message)s", datefmt="%I:%M:%S %p", level=logging.DEBUG
 )
 
+class ArgsEncoder(json.JSONEncoder):
+  def default(self, obj):
+    if isinstance(obj, ArrivalType):
+        return str(obj)
+    if isinstance(obj, KeyType):
+        return str(obj)
+    if isinstance(obj, TopologyType):
+        return str(obj)
+    if isinstance(obj, SystemType):
+        return str(obj)
+    if isinstance(obj, FailureType):
+        return str(obj)
+    return super(ArgsEncoder, self).default(obj)
 
 if __name__ == "__main__":
     # ------- Parse arguments --------------------------
     parser = argparse.ArgumentParser(
         description="Runs a benchmark of a local fault tolerant datastore"
     )
+    parser.add_argument("--config", type=str, default="", help="The full config file to load arguments from", required=False)
 
     register_system_args(parser)
     register_topo_args(parser)
@@ -27,11 +44,52 @@ if __name__ == "__main__":
     arg_group = parser.add_argument_group("benchmark")
     arg_group.add_argument("-d", action="store_true", help="Debug mode")
     arg_group.add_argument("--duration", type=float, default=60)
-    arg_group.add_argument("--result-location", default="/results")
+    arg_group.add_argument("--result-location", default="/results/")
 
     args = parser.parse_args()
 
+    # Load the config file JSON, then give the config as a namespace
+    loads_config = False
+    try:
+      with open(args.config, "w") as inconf:
+        injson = json.load(inconf)
+        conf_args_dict = injson["config"]
+        parser.set_defaults(**conf_args_dict)
+        args = parser.parse_args()
+        loads_config = True
+        try:
+          repo = git.Repo(search_parent_directories=True)
+          commit_sha = repo.head.commit.hexsha
+          head_sha = repo.head.object.hexsha
+          in_commit_sha = injson["gitref"]["commit_sha"]
+          in_head_sha = injson["gitref"]["head_sha"]
+          if commit_sha != in_commit_sha or head_sha != in_head_sha:
+            logging.warning(f"you are using a version of Reckon which is not the one used to generate the supplied config file. To be sure you are obtaining the same results as the experiment of this config file, please use the version with commit ref {in_commit_sha} and head ref {in_head_sha}.")
+        except Exception:
+          commit_sha = "None"
+          head_sha = "None"
+    except Exception:
+      pass
+
     print(f"Args = {args}")
+
+    # Write the full args config to disk
+    with open(os.path.join(args.result_location, "config_full.json"), "w") as outconf:
+      try:
+        repo = git.Repo(search_parent_directories=True)
+        commit_sha = repo.head.commit.hexsha
+        head_sha = repo.head.object.hexsha
+      except Exception:
+        commit_sha = "None"
+        head_sha = "None"
+      confdict = {
+          "config": vars(args),
+          "gitref": {
+            "commit_sha": commit_sha,
+            "head_sha": head_sha
+          }
+      }
+      json.dump(confdict, outconf, cls=ArgsEncoder)
 
     if args.d:
         from mininet.cli import CLI
