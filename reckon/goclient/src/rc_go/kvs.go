@@ -49,6 +49,7 @@ func (RC_KVS_Client) Perform(op types.Operation, cli types.AbstractClient, clien
 		cli, err := client_gen()
 		utils.Check(err, "generating client")
 		defer cli.Close()
+		cli_kvs = cli.(KVSClient)
 		func_cli = &cli_kvs
 	}
 

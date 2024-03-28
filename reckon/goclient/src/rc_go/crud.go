@@ -57,13 +57,14 @@ func (RC_CRUD_Client) Perform(op types.Operation, cli types.AbstractClient, clie
 		os.Exit(1)
 	}
 
-	cli_kvs := cli.(CRUDClient)
-	func_cli := &cli_kvs
+	cli_crud := cli.(CRUDClient)
+	func_cli := &cli_crud
 	if new_client_per_request {
 		cli, err := client_gen()
 		utils.Check(err, "generating client")
 		defer cli.Close()
-		func_cli = &cli_kvs
+		cli_crud = cli.(CRUDClient)
+		func_cli = &cli_crud
 	}
 
 	expected_start := op.Time + test_start_time
