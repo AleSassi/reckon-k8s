@@ -6,6 +6,7 @@ from reckon.workload   import register_ops_args,     get_ops_provider, ArrivalTy
 from reckon.failures   import register_failure_args, get_failure_provider, FailureType
 from reckon.topologies import register_topo_args,    get_topology_provider, TopologyType
 from reckon.systems    import register_system_args,  get_system, SystemType
+from reckon.config_loader import Config, GitInfo
 
 import logging, time, os
 
@@ -49,25 +50,22 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Load the config file JSON, then give the config as a namespace
-    loads_config = False
     try:
-      with open(args.config, "w") as inconf:
-        injson = json.load(inconf)
-        conf_args_dict = injson["config"]
-        parser.set_defaults(**conf_args_dict)
-        args = parser.parse_args()
-        loads_config = True
-        try:
-          repo = git.Repo(search_parent_directories=True)
-          commit_sha = repo.head.commit.hexsha
-          head_sha = repo.head.object.hexsha
-          in_commit_sha = injson["gitref"]["commit_sha"]
-          in_head_sha = injson["gitref"]["head_sha"]
-          if commit_sha != in_commit_sha or head_sha != in_head_sha:
-            logging.warning(f"you are using a version of Reckon which is not the one used to generate the supplied config file. To be sure you are obtaining the same results as the experiment of this config file, please use the version with commit ref {in_commit_sha} and head ref {in_head_sha}.")
-        except Exception:
-          commit_sha = "None"
-          head_sha = "None"
+      inconfig: Config = Config.parse_file(args.config)
+      for attr, val in vars(args).items():
+        if hasattr(inconfig.reckonConfig, attr) and val == parser.get_default(attr):
+          setattr(args, attr, getattr(inconfig.reckonConfig, attr))
+      try:
+        repo = git.Repo(search_parent_directories=True)
+        commit_sha = repo.head.commit.hexsha
+        head_sha = repo.head.object.hexsha
+        in_commit_sha = inconfig.gitInfo.commit_sha
+        in_head_sha = inconfig.gitInfo.head_sha
+        if commit_sha != in_commit_sha or head_sha != in_head_sha:
+          logging.warning(f"you are using a version of Reckon which is not the one used to generate the supplied config file. To be sure you are obtaining the same results as the experiment of this config file, please use the version with commit ref {in_commit_sha} and head ref {in_head_sha}.")
+      except Exception:
+        commit_sha = "None"
+        head_sha = "None"
     except Exception:
       pass
 
@@ -75,21 +73,8 @@ if __name__ == "__main__":
 
     # Write the full args config to disk
     with open(os.path.join(args.result_location, "config_full.json"), "w") as outconf:
-      try:
-        repo = git.Repo(search_parent_directories=True)
-        commit_sha = repo.head.commit.hexsha
-        head_sha = repo.head.object.hexsha
-      except Exception:
-        commit_sha = "None"
-        head_sha = "None"
-      confdict = {
-          "config": vars(args),
-          "gitref": {
-            "commit_sha": commit_sha,
-            "head_sha": head_sha
-          }
-      }
-      json.dump(confdict, outconf, cls=ArgsEncoder)
+      confdict = Config(reckonConfig=vars(args), gitInfo=GitInfo.create())
+      outconf.write(confdict.json())
 
     if args.d:
         from mininet.cli import CLI
