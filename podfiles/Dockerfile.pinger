@@ -9,5 +9,7 @@ RUN apk add --update --no-cache \
         iputils
 
 RUN mkdir -p /logs
+RUN echo "export EGG=$(ip addr | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/' | tr -d '.')" > cmd.sh
+RUN echo 'ping -s 120 -p "$EGG" 10.0.0.1' >> cmd.sh
 
-CMD [ "ping", "10.0.0.1" ]
+CMD [ "bash", "cmd.sh" ]
