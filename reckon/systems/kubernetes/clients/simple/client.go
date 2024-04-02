@@ -88,7 +88,9 @@ func (c rc_k8s_cli) Create(k string, v string) (string, error) {
 		deployment.SetLabels(labels)
 		deployment.Spec.Selector.MatchLabels["app"] = k
 		deployment.Spec.Template.ObjectMeta.Labels["app"] = k
-		deployment.Spec.Template.Spec.TopologySpreadConstraints[0].LabelSelector.MatchLabels["app"] = k
+		if len(deployment.Spec.Template.Spec.TopologySpreadConstraints) > 0 {
+			deployment.Spec.Template.Spec.TopologySpreadConstraints[0].LabelSelector.MatchLabels["app"] = k
+		}
 
 		// Create Deployment in the appropriate namespace
 		deploymentIntf := c.getDeploymentIntf(deployment.GetObjectMeta().GetNamespace())
@@ -214,7 +216,7 @@ func main() {
 			log.Println("Error when building config")
 			return nil, err
 		}
-		config.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(100, 400)
+		config.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(300, 1200)
 		clientset, err := kubernetes.NewForConfig(config)
 		if err != nil {
 			log.Println("Error when creating clientset")
