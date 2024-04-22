@@ -14,3 +14,7 @@ bin
 include
 lib
 lib64
+
+compiled
+goclient-compiled
+.venv

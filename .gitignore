@@ -188,3 +188,7 @@ cython_debug/
 
 # Pod container archives
 podfiles/archives/
+compiled
+goclient-compiled
+.venv
+to_reproduce
