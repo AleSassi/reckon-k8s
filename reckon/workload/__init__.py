@@ -100,14 +100,14 @@ def register_ops_args(parser):
     workload_group.add_argument(
        "--key-gen-seed",
         type=int,
-        default=int(time),
+        default=int(time()),
         help="The seed used when initializing the RNG for the key generator. Defaults to time().",
     )
 
     workload_group.add_argument(
        "--arrival-seed",
         type=int,
-        default=int(time),
+        default=int(time()),
         help="The seed used when initializing the RNG for the arrival process. Defaults to time().",
     )
 
