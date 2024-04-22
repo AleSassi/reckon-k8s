@@ -14,7 +14,7 @@ RUN mkdir -p /results/logs
 RUN mkdir -p /archives
 
 RUN touch /kind/kubeadm.conf
-ADD ./podfiles/archives /archives
 ADD ./scripts/loadimages.sh /archives
+ADD ./podfiles/archives /archives
 
 CMD [ "/bin/bash" ]

@@ -51,12 +51,16 @@ RUN mkdir -p /results/logs
 RUN mkdir -p /results/logs/kubenodes
 ENV KUBECONFIG=/files/kubefiles/config
 
-# Add reckon code
-ADD . .
-ENV PYTHONPATH="/root:${PYTHONPATH}"
-ENV SHELL=/bin/bash
-
 # Add built artefacts
 ENV ETCD_UNSUPPORTED_ARCH=arm64
 COPY --from=etcd-image /reckon/systems/etcd reckon/systems/etcd
 COPY --from=k8s-image /reckon/systems/kubernetes reckon/systems/kubernetes
+
+# Add reckon code
+ADD ./reckon ./reckon
+ADD ./scripts ./scripts
+ADD ./to_reproduce ./to_reproduce
+ADD ./vendor ./vendor
+ADD ./files ./files
+ENV PYTHONPATH="/root:${PYTHONPATH}"
+ENV SHELL=/bin/bash
