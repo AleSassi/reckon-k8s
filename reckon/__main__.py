@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+import sys
 
 from reckon.client_runner import run_test
 from reckon.workload   import register_ops_args,     get_ops_provider, ArrivalType, KeyType
@@ -129,8 +130,13 @@ if __name__ == "__main__":
               failures,
           ))
           p.start()
-          p.join(max(args.duration * 10, 150))
+          p.join(max(args.duration * 10, 600))
           p.terminate()
+        except Exception as e:
+          print(e)
+          for stopper in killers.values():
+              stopper()
+          sys.exit(1)
         finally:
           for stopper in killers.values():
               stopper()

@@ -1,3 +1,7 @@
+import sys
+sys.path.append('../reckon')
+
+
 from subprocess import call, Popen, run
 import shlex
 import itertools as it
@@ -9,7 +13,18 @@ import numpy as np
 
 from typing import Dict, Any, AnyStr
 
+from reckon.config_loader import *
+
 import math
+
+from uuid import UUID
+
+def is_valid_uuid(uuid_to_test, version=4):
+    try:
+        uuid_obj = UUID(uuid_to_test, version=version)
+    except ValueError:
+        return False
+    return str(uuid_obj) == uuid_to_test
 
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -55,7 +70,7 @@ default_parameters = {
 def run_test(folder_path, config : Dict[str, Any]):
     run('rm -rf /data/*', shell=True).check_returncode()
     run('mn -c', shell=True).check_returncode()
-    run('pkill client', shell=True)
+    #run('pkill client', shell=True)
 
     uid = uuid.uuid4()
 
@@ -104,10 +119,66 @@ def run_test(folder_path, config : Dict[str, Any]):
 
     cmd = shlex.split(cmd)
 
-    call(cmd)
+    retcode = call(cmd)
+    if retcode != 0:
+        sys.exit(1)
 
     # Move kubernetes logs out of their location and into the log path
     run(f'cp /results/logs/kubenodes/* {log_path}/', shell=True).check_returncode()
+
+def run_pi4_test_from_config(folder_path, config : str):
+    run('rm -rf /home/raspikube/reckon-logs/*', shell=True).check_returncode()
+    #run('pkill client', shell=True)
+
+    uid = uuid.uuid4()
+
+    result_folder = f"{folder_path}/{uid}/"
+    log_path    = result_folder + f"logs"
+    config_path = result_folder + f"config.json"
+    result_path = result_folder
+
+    # Load the config file JSON, then give the config as a namespace
+    try:
+        inconfig: Config = Config.parse_file(config)
+        cmd = " ".join([
+            f"python -m reckon kubernetes simple_k8s none",
+            f"--number-nodes 3 --number-clients 1 --client go",
+            f"--link-latency 2 --link-loss 0 --link-jitter 0",
+            f"--new_client_per_request {inconfig.reckonConfig.new_client_per_request}",
+            f"--write-ratio {inconfig.reckonConfig.write_ratio}",
+            f"--read-ratio {inconfig.reckonConfig.read_ratio}",
+            f"--create-ratio {inconfig.reckonConfig.create_ratio}",
+            f"--update-ratio {inconfig.reckonConfig.update_ratio}",
+            f"--delete-ratio {inconfig.reckonConfig.delete_ratio}",
+            f"--rate {inconfig.reckonConfig.rate} --duration {inconfig.reckonConfig.duration}",
+            f"--arrival-process {inconfig.reckonConfig.arrival_process}",
+            f"--system_logs {log_path} --result-location {result_path} --data-dir=/data",
+            f"--failure_timeout {inconfig.reckonConfig.failure_timeout}",
+            f"--delay_interval {inconfig.reckonConfig.delay_interval}",
+            f"--key-gen-seed {inconfig.reckonConfig.key_gen_seed}",
+            f"--arrival-seed {inconfig.reckonConfig.arrival_seed}",
+            f"--payload-size {inconfig.reckonConfig.payload_size}",
+            f"--key-distribution {inconfig.reckonConfig.key_distribution}",
+            f"--max-key {inconfig.reckonConfig.max_key}",
+            f"--net-spec \'[]\'"
+            ])
+
+        run(f'mkdir -p {result_folder}', shell=True).check_returncode()
+        run(f'mkdir -p {log_path}', shell=True).check_returncode()
+
+        print(f"RUNNING TEST")
+        print(cmd)
+
+        #cmd = shlex.split(cmd)
+
+        run(cmd, env=os.environ, shell=True).check_returncode()
+
+        # Compress everything into a nice archive
+        #run(f"tar cvJf {result_path}.tar.xz {result_path}", shell=True).check_returncode()
+        #run(f"rm -rf {result_path}", shell=True).check_returncode()
+    except Exception as e:
+        print(e)
+        sys.exit(1)
 
 from numpy.random import default_rng
 rng = default_rng()
@@ -166,7 +237,21 @@ def kubetest():
                 run_test(folder_path, params)
                 )
 
-kubetest()
+def kubetest_repro_pi4():
+    for run in os.listdir("/root/to_reproduce"):
+        full_entry_path = os.path.join("/root/to_reproduce", run)
+        if os.path.isdir(full_entry_path) and is_valid_uuid(run):
+            # We found a run config directory. Replicate the experiment
+            for config in os.listdir(full_entry_path):
+                if config.find(".json") >= 0:
+                    config_file = os.path.join(full_entry_path, config)
+                    actions.append(lambda params = default_parameters: run_pi4_test_from_config(folder_path, config_file))
+        elif full_entry_path.find(".json") >= 0:
+            actions.append(lambda params = default_parameters: run_pi4_test_from_config(folder_path, full_entry_path))
+
+kubetest_repro_pi4()
+
+#kubetest()
 
 # Shuffle to isolate ordering effects
 rng.shuffle(actions)

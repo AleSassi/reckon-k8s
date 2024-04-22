@@ -2,7 +2,10 @@ from enum import Enum
 import math
 import shutil
 import subprocess
+import sys
 from typing import Union, Tuple, List, Iterator, Any, NewType, Dict, Callable, IO
+import docker.errors
+import requests
 from typing_extensions import Literal
 import logging
 from struct import pack, unpack
@@ -500,7 +503,7 @@ class KubeNode ( Docker ):
 
         # setup docker client
         # self.dcli = docker.APIClient(base_url='unix://var/run/docker.sock')
-        self.d_client = docker.from_env()
+        self.d_client = docker.from_env(timeout=240)
         self.dcli = self.d_client.api
 
         _id = None
@@ -549,15 +552,17 @@ class KubeNode ( Docker ):
             device_requests=self.device_requests,
         )
 
-        if kwargs.get("rm", False):
-            container_list = self.dcli.containers(all=True)
-            for container in container_list:
-                for container_name in container.get("Names", []):
-                    if "%s.%s" % (self.dnameprefix, name) in container_name:
-                        self.dcli.remove_container(container="%s.%s" % (self.dnameprefix, name), force=True)
-                        break
-
         # create new docker container
+        if kwargs.get("rm", False):
+            cont_name = "%s.%s" % (self.dnameprefix, name)
+            containers: list[Container] = self.d_client.containers.list(all=True)
+            print(f"Checking the existence of a container named {cont_name} (found {len(containers)} containers)...")
+            for container in containers:
+                if cont_name in container.name:
+                    print(f"Container with ID {container.id} has the same name as the container to be started. Killing and removing...")
+                    container.remove(v=True, force=True)
+        
+        print("Starting the container...")
         self.dc = self.dcli.create_container(
             name="%s.%s" % (self.dnameprefix, name),
             image=self.dimage,
@@ -573,7 +578,7 @@ class KubeNode ( Docker ):
             volumes=[self._get_volume_mount_name(v) for v in self.volumes if self._get_volume_mount_name(v) is not None],
             hostname=name,
         )
-
+        
         # start the container
         self.dcli.start(self.dc)
         debug("Docker container %s started\n" % name)
@@ -697,8 +702,16 @@ class KubeNode ( Docker ):
         Stops the container
         """
         dc: Container = self.d_client.containers.get(self.dname)
-        dc.stop()
-        dc.remove()
+        try:
+            dc.stop(timeout=60)
+        except docker.errors.APIError as e:
+            if e.status_code == 500:
+                print(f"ERROR while stopping container {self.dname}: {e.status_code} - {e.explanation}")
+                print("Sleeping for 60 seconds before forcibly removing the container...")
+                time.sleep(60)
+            else:
+                raise e
+        dc.remove(v=True, force=True)
     
     def restart(self):
         if not self.running:

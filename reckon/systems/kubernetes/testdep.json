@@ -3,12 +3,13 @@
   "kind": "Deployment",
   "metadata": {
     "name": "test-deployment",
+    "namespace": "reckon-ns",
     "labels": {
       "app": "test-deployment"
     }
   },
   "spec": {
-    "replicas": 3,
+    "replicas": 2,
     "selector": {
       "matchLabels": {
         "app": "test-deployment"
@@ -21,27 +22,36 @@
         }
       },
       "spec": {
-        "topologySpreadConstraints": [
-          {
-              "maxSkew": 1,
-              "topologyKey": "kubernetes.io/hostname",
-              "whenUnsatisfiable": "DoNotSchedule",
-              "labelSelector": {
-                  "matchLabels": {
-                      "app": "test-deployment"
-                  }
-              }
-          }
-        ],
         "containers": [
           {
             "name": "test-deployment",
             "image": "pinger:v1",
-            "ports": [
+            "env": [
               {
-                "containerPort": 80
+                  "name": "POD_NAME",
+                  "valueFrom": {
+                      "fieldRef": {
+                          "fieldPath": "metadata.name"
+                      }
+                  }
+              },
+              {
+                  "name": "POD_NAMESPACE",
+                  "valueFrom": {
+                      "fieldRef": {
+                          "fieldPath": "metadata.namespace"
+                      }
+                  }
+              },
+              {
+                  "name": "POD_IP",
+                  "valueFrom": {
+                      "fieldRef": {
+                          "fieldPath": "status.podIP"
+                      }
+                  }
               }
-            ]
+          ]
           }
         ]
       }

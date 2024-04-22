@@ -1,5 +1,6 @@
 import json
 import logging
+import subprocess
 from threading import Thread
 import time
 import sys
@@ -192,4 +193,11 @@ def run_test(
         fres.write(resps.json())
     with open(f"{test_results_location}/test_ops.json", "w") as fres:
         fres.write(json.dumps(req_log))
+    #kubecluster: list[str] = [c.IP() for c in cluster]
+    #idx = 0
+    logging.debug("COLLATE: collecting logs from cluster machines")
+    for node in cluster:
+        node.cmd("pkill -f tcpdump")
+    subprocess.run(f"cp -r /results/logs/kubenodes/* {test_results_location}/", shell=True).check_returncode()
+    subprocess.run(f"cp -r /results/logs/*.err {test_results_location}/", shell=True).check_returncode()
     logging.debug("COLLATE: end")

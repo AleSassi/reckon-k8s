@@ -8,7 +8,7 @@ import reckon.reckon_types as t
 
 
 class Go(t.AbstractClient):
-    client_path = "reckon/systems/kubernetes/clients/simple/client"
+    client_path = "/root/reckon/systems/kubernetes/clients/simple/client"
 
     def __init__(self, args):
         self.ncpr = args.new_client_per_request
@@ -38,14 +38,14 @@ class Kubernetes(t.AbstractSystem):
         else:
             raise Exception("Not supported client type: " + str(args.client))
         
-    def add_stderr_logging(self, cmd: str, tag: str):
+    def add_stderr_logging(self, cmd: str, tag: str, dir: str = "/results/logs"):
         time = self.creation_time
-        log = "/results/logs"
+        log = dir
         return f"{cmd} 2> {log}/{time}_{tag}.err"
 
-    def add_stdout_logging(self, cmd: str, tag: str, verbose: bool=False):
+    def add_stdout_logging(self, cmd: str, tag: str, dir: str = "/results/logs", verbose: bool=False):
         time = self.creation_time
-        log = "/results/logs"
+        log = dir
         return f"{cmd} | tee {log}/{time}_{tag}.out" if verbose else f"{cmd} > {log}/{time}_{tag}.out"
 
     def start_nodes(self, cluster):
@@ -56,6 +56,7 @@ class Kubernetes(t.AbstractSystem):
         kubecluster: list[t.KubeNode] = cluster
         control_plane = kubecluster[0]
         # Now that interfaces are up, we can start our Kubernetes cluster
+        i = 0
         for kubenode in kubecluster:
             tag = self.get_node_tag(kubenode)
 
@@ -97,6 +98,7 @@ class Kubernetes(t.AbstractSystem):
                 config_str += yaml.dump(conf_template)
             
             kubenode.cmd(f"echo '{config_str}' > /kind/kubeadm.conf")
+            kubenode.cmd(f"mkdir -p /results/logs/node_{i}")
 
             # Perform node-specific things and start the cluster
             start_cmd = ""
@@ -118,8 +120,8 @@ class Kubernetes(t.AbstractSystem):
             else:
                 # Join all worker nodes!
                 start_cmd = "kubeadm join --config=/kind/kubeadm.conf --skip-phases=preflight --v=6 && bash /archives/loadimages.sh"
-            start_cmd = self.add_stderr_logging(start_cmd, tag + ".log")
-            start_cmd = self.add_stdout_logging(start_cmd, tag + ".log", verbose=True)
+            start_cmd = self.add_stderr_logging(start_cmd, tag + ".log", dir=f"/results/logs/node_{i}")
+            start_cmd = self.add_stdout_logging(start_cmd, tag + ".log", dir=f"/results/logs/node_{i}", verbose=True)
 
             logging.debug("Start cmd: " + start_cmd)
             kubenode.cmd(start_cmd, verbose=True)
@@ -128,6 +130,7 @@ class Kubernetes(t.AbstractSystem):
             stoppers[tag] = lambda host=kubenode: host.pause()
             killers[tag] = lambda host=kubenode: host.terminate()
             restarters[tag] = lambda host=kubenode, start_cmd=start_cmd: host.restart()
+            i += 1
 
         return restarters, stoppers, killers
 
@@ -163,12 +166,11 @@ class Kubernetes(t.AbstractSystem):
         # Start tcpdump to analyze incoming K8s packets
         logging.debug("PREPARE: Preparing the cluster for the test...")
         kubecluster: list[t.KubeNode] = cluster
-        cp = None
-        for c in kubecluster:
-            if c.is_control:
-                cp = c
         submitted = float(time.time_ns()) / 1e9
-        cp.cmd("tcpdump -i any -w /results/logs/cp-dump.pcap", verbose=True, detached=True)
+        i = 0
+        for c in kubecluster:
+            c.cmd(f"tcpdump -i any -w /results/logs/node_{i}/tcpdump.pcap", verbose=True, detached=True)
+            i += 1
         ended = float(time.time_ns()) / 1e9
         logging.debug("PREPARE: done")
         return t.Result(kind="result", t_submitted=submitted, t_result=ended, result="tcpdump started", op_kind=t.OperationKind.Other, clientid="-1", other={})
