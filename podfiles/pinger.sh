@@ -3,6 +3,7 @@
 _term() {
     echo "Killing ping manually to terminate"
     kill -9 "$child" 2>/dev/null
+    exit 0
 }
 
 trap _term SIGTERM
@@ -12,3 +13,4 @@ ping -s 120 -p "$EGG" 10.0.0.1 &
 
 child=$!
 wait "$child"
+exit 0
