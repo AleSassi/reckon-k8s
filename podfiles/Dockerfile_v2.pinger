@@ -1,0 +1,14 @@
+FROM alpine:latest
+  
+RUN apk add --update --no-cache \
+        bash \
+        tcpdump \
+        iperf \
+        busybox-extras \
+        iproute2 \
+        iputils
+
+RUN mkdir -p /logs
+ADD pinger_v2.sh cmd.sh
+
+CMD [ "bash", "cmd.sh" ]

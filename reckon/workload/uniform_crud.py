@@ -63,7 +63,7 @@ class UniformCRUD(t.AbstractKeyGenerator):
         while True:
             kind = self._gen_op_kind()
             if kind == 0:
-                yield self._gen_create_deployment(len(self._keys), "/root/reckon/systems/kubernetes/testdep.json")
+                yield self._gen_create_deployment(len(self._keys), "/root/reckon/systems/kubernetes/testdep.json" if self._op_ratio[3] == 0 else "/root/reckon/systems/kubernetes/testdep_v2.json")
             elif kind == 1:
                 dep, ns = self._rand_key()
                 yield t.Read(
