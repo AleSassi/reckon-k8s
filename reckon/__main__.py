@@ -111,8 +111,8 @@ if __name__ == "__main__":
 
           print("BENCHMARK: testing connectivity, and allowing network to settle")
           if str(os.environ["NETSIM_RUNTIME"]) == "containernet":
-            print("Waiting 10s for the network to start up and settle...")
-            time.sleep(10) # Sleeping for some time allows all COntainernet hosts to start up
+            print("Waiting 20s for the network to start up and settle...")
+            time.sleep(20) # Sleeping for some time allows all COntainernet hosts to start up
           print("Pinging all hosts")
           net.pingAll()
 
