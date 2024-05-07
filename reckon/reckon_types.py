@@ -770,6 +770,8 @@ class KubeNode ( Docker ):
         if self.running:
             # We need to copy some files to a location which persists between restarts, otherwise all data mounted to tmpfs will be wiped!
             self.cmd("bash /kind/backup-tmpfs.sh", verbose=True)
+            self.cmd("pkill -15 tcpdump", verbose=True)
+            self.cmd("while pkill -0 tcpdump 2> /dev/null; do sleep 1; done;", verbose=True)
             # Keep track of every link we need to restore later
             self.kubeLinks: list[self.KubeLink] = []
             for l in self.kubenet.links:
@@ -790,8 +792,10 @@ class KubeNode ( Docker ):
         Stops the container
         """
         dc: Container = self.d_client.containers.get(self.dname)
-        try:         
+        try:
             #dc.stop(timeout=60)
+            self.cmd("pkill -15 tcpdump", verbose=True)
+            self.cmd("while pkill -0 tcpdump 2> /dev/null; do sleep 1; done;", verbose=True)
             dc.kill()
         except docker.errors.APIError as e:
             if e.status_code == 500:

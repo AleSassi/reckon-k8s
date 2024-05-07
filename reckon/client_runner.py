@@ -197,7 +197,8 @@ def run_test(
     #idx = 0
     logging.debug("COLLATE: collecting logs from cluster machines")
     for node in cluster:
-        node.cmd("pkill -f tcpdump")
+        node.cmd("pkill -15 tcpdump", verbose=True)
+        node.cmd("while pkill -0 tcpdump 2> /dev/null; do sleep 1; done;", verbose=True)
     subprocess.run(f"cp -r /results/logs/kubenodes/* {test_results_location}/", shell=True).check_returncode()
     subprocess.run(f"cp -r /results/logs/*.err {test_results_location}/", shell=True).check_returncode()
     logging.debug("COLLATE: end")

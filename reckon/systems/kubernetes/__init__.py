@@ -129,6 +129,8 @@ class Kubernetes(t.AbstractSystem):
             # We use the default arguemnt to capture the host variable semantically rather than lexically
             def restarter(host=kubenode, start_cmd=start_cmd, cluster=cluster):
                 host.restart(cluster)
+                if newHost is not None:
+                    newHost.cmd(f"tcpdump -i any -w /results/logs/node_{cluster.index(newHost)}/tcpdump_restart_{datetime.now().strftime('%Y%m%d%H%M%S')}.pcap", verbose=True, detached=True)
                 del host # Restarting a host creates a new one! Delete the previous one to free some memory
 
             stoppers[tag] = lambda host=kubenode: host.pause()
