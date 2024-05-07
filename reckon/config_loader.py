@@ -8,6 +8,9 @@ from abc import ABC, abstractproperty
 from pydantic import BaseModel
 
 from reckon.workload import ArrivalType, KeyType
+from reckon.systems import SystemType
+from reckon.failures import FailureType
+from reckon.topologies import TopologyType
 
 import git
 
@@ -32,6 +35,8 @@ class CustomJSONConvertible(ABC):
         return obj_dict
 
 class ReckonConfig(BaseModel):
+    system_type: SystemType
+    client: str
     arrival_process: ArrivalType
     key_distribution: KeyType
     rate: float
@@ -50,11 +55,23 @@ class ReckonConfig(BaseModel):
     delay_interval: float
     duration: float
     result_location: str
+    data_dir: str
+    topo_type: TopologyType
+    number_nodes: int
+    number_clients: int
+    link_loss: float
+    link_jitter: float
+    net_spec: str
+    link_latency: float
+    failure_type: FailureType
 
     def enums() -> dict[str, any]:
         return {
             "ArrivalType": ArrivalType,
-            "KeyType": KeyType
+            "KeyType": KeyType,
+            "SystemType": SystemType,
+            "FailureType": FailureType,
+            "TopologyType": TopologyType
         }
 
 class GitInfo(BaseModel):
