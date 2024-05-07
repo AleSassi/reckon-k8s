@@ -48,7 +48,7 @@ class Kubernetes(t.AbstractSystem):
         log = dir
         return f"{cmd} | tee {log}/{time}_{tag}.out" if verbose else f"{cmd} > {log}/{time}_{tag}.out"
 
-    def start_nodes(self, cluster):
+    def start_nodes(self, cluster: list[t.KubeNode]):
         restarters = {}
         stoppers = {}
         killers = {}
@@ -119,7 +119,7 @@ class Kubernetes(t.AbstractSystem):
                 start_cmd = "source /kind/startcp.sh"
             else:
                 # Join all worker nodes!
-                start_cmd = "kubeadm join --config=/kind/kubeadm.conf --skip-phases=preflight --v=6 && bash /archives/loadimages.sh"
+                start_cmd = "source /kind/startwn.sh"
             start_cmd = self.add_stderr_logging(start_cmd, tag + ".log", dir=f"/results/logs/node_{i}")
             start_cmd = self.add_stdout_logging(start_cmd, tag + ".log", dir=f"/results/logs/node_{i}", verbose=True)
 
@@ -127,9 +127,13 @@ class Kubernetes(t.AbstractSystem):
             kubenode.cmd(start_cmd, verbose=True)
 
             # We use the default arguemnt to capture the host variable semantically rather than lexically
+            def restarter(host=kubenode, start_cmd=start_cmd, cluster=cluster):
+                host.restart(cluster)
+                del host # Restarting a host creates a new one! Delete the previous one to free some memory
+
             stoppers[tag] = lambda host=kubenode: host.pause()
-            killers[tag] = lambda host=kubenode: host.terminate()
-            restarters[tag] = lambda host=kubenode, start_cmd=start_cmd: host.restart()
+            killers[tag] = lambda host=kubenode: host.terminateAndRemove()
+            restarters[tag] = lambda host=kubenode, start_cmd=start_cmd, cluster=cluster: restarter(host, start_cmd, cluster)
             i += 1
 
         return restarters, stoppers, killers

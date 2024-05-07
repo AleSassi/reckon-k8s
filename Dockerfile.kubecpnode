@@ -5,7 +5,7 @@ ENV KIND_EXPERIMENTAL_CONTAINERD_SNAPSHOTTER=''
 ENV KUBECONFIG=/etc/kubernetes/admin.conf
 
 # Install ping, needed by Containernet
-RUN apt update -yq && apt install -yy -qq iputils-ping net-tools iproute2 tcpdump
+RUN apt update -yq && apt install -yy -qq iputils-ping net-tools iproute2 tcpdump rsync
 
 LABEL io.x-k8s.kind.role="control-plane"
 LABEL io.x-k8s.kind.cluster="cl"
@@ -18,11 +18,31 @@ RUN mkdir -p /archives
 
 ADD ./scripts/startcp.sh /kind
 ADD ./scripts/copyconfigs.sh /kind
+ADD ./scripts/restore-tmpfs.sh /kind
+ADD ./scripts/backup-tmpfs.sh /kind
 ADD ./scripts/loadimages.sh /archives
+ADD ./scripts/kubenode-entrypoint.sh /kind
 RUN touch /kind/kubeadm.conf
 
 RUN echo "tcpdump -i any -w /results/logs/cp-dump.pcap & disown" > /startdump.sh
 
 ADD ./podfiles/archives /archives
+
+RUN mkdir -p /cni-bin
+RUN cp -r /opt/cni/bin/* /cni-bin/
+
+RUN mkdir -p /containerd
+RUN cp -r /var/lib/containerd/* /containerd/
+
+RUN mkdir -p /kubelet
+
+# Magic on the entrypoint file
+RUN cp /usr/local/bin/entrypoint /usr/local/bin/entrypoint.old
+RUN cat /kind/restore-tmpfs.sh > /usr/local/bin/entrypoint
+RUN echo "\n\n" >> /usr/local/bin/entrypoint
+RUN cat /usr/local/bin/entrypoint.old >> /usr/local/bin/entrypoint
+
+#RUN mkdir -p /containerd-run
+#RUN cp -r /run/containerd/* /containerd-run/
 
 CMD [ "/bin/bash" ]

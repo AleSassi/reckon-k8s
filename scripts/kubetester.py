@@ -14,6 +14,8 @@ import numpy as np
 from typing import Dict, Any, AnyStr
 
 from reckon.config_loader import *
+from reckon.reckon_types import LinkSpec
+from pydantic.json import pydantic_encoder
 
 import math
 
@@ -25,6 +27,13 @@ def is_valid_uuid(uuid_to_test, version=4):
     except ValueError:
         return False
     return str(uuid_obj) == uuid_to_test
+
+def is_valid_timeFormat(input):
+    try:
+        time.strptime(input, '%Y%m%d%H%M%S')
+        return True
+    except ValueError:
+        return False
 
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -69,6 +78,7 @@ default_parameters = {
 
 def run_test(folder_path, config : Dict[str, Any]):
     run('rm -rf /data/*', shell=True).check_returncode()
+    run('rm -rf /results/logs/*.log.*', shell=True).check_returncode()
     run('mn -c', shell=True).check_returncode()
     #run('pkill client', shell=True)
 
@@ -126,8 +136,8 @@ def run_test(folder_path, config : Dict[str, Any]):
     # Move kubernetes logs out of their location and into the log path
     run(f'cp /results/logs/kubenodes/* {log_path}/', shell=True).check_returncode()
 
-def run_pi4_test_from_config(folder_path, config : str):
-    run('rm -rf /home/raspikube/reckon-logs/*', shell=True).check_returncode()
+def run_pi4_test_from_config(folder_path, config_full: str, config:str):
+    run('rm -rf /results/logs/*.log.*', shell=True).check_returncode()
     #run('pkill client', shell=True)
 
     uid = uuid.uuid4()
@@ -139,7 +149,20 @@ def run_pi4_test_from_config(folder_path, config : str):
 
     # Load the config file JSON, then give the config as a namespace
     try:
-        inconfig: Config = Config.parse_file(config)
+        inconfig: Config = Config.parse_file(config_full)
+        net_spec: list[LinkSpec] = []
+        with open(config, "r") as conf:
+            conf_obj = json.load(conf)
+            links: list = conf_obj["links"]
+            nodes = {
+                "128.232.60.138": "cp",
+                "128.232.60.140": "wn",
+                "128.232.60.146": "wn2",
+                "128.232.60.145": "mc1"
+            }
+            for link in links:
+                net_spec.append(LinkSpec(n_from=nodes[link["node"]], n_to="s1", latency_ms=float(link["delay"]), loss_perc=float(link["loss"]), jitter_ms=float(link["jitter"])))
+        
         cmd = " ".join([
             f"python -m reckon kubernetes simple_k8s none",
             f"--number-nodes 3 --number-clients 1 --client go",
@@ -160,7 +183,7 @@ def run_pi4_test_from_config(folder_path, config : str):
             f"--payload-size {inconfig.reckonConfig.payload_size}",
             f"--key-distribution {inconfig.reckonConfig.key_distribution}",
             f"--max-key {inconfig.reckonConfig.max_key}",
-            f"--net-spec \'[]\'"
+            f"--net-spec \'{json.dumps(net_spec, default=pydantic_encoder)}\'"
             ])
 
         run(f'mkdir -p {result_folder}', shell=True).check_returncode()
@@ -237,34 +260,69 @@ def kubetest():
                 run_test(folder_path, params)
                 )
 
-def kubetest_repro_pi4():
-    for run in os.listdir("/root/to_reproduce"):
-        full_entry_path = os.path.join("/root/to_reproduce", run)
+def kubetest_repro_pi4(rootdir: str = "/reckon/to_reproduce"):
+    for run in os.listdir(rootdir):
+        full_entry_path = os.path.join(rootdir, run)
         if os.path.isdir(full_entry_path) and is_valid_uuid(run):
             # We found a run config directory. Replicate the experiment
             for config in os.listdir(full_entry_path):
                 if config.find(".json") >= 0:
-                    config_file = os.path.join(full_entry_path, config)
-                    actions.append(lambda params = default_parameters: run_pi4_test_from_config(folder_path, config_file))
+                    config_file_reckon = os.path.join(full_entry_path, "config.json")
+                    config_file_params = os.path.join(full_entry_path, "config_full.json")
+                    actions.append(lambda params = default_parameters: run_pi4_test_from_config(folder_path, config_file_params, config_file_reckon))
+                    break
         elif full_entry_path.find(".json") >= 0:
-            actions.append(lambda params = default_parameters: run_pi4_test_from_config(folder_path, full_entry_path))
+            actions.append(lambda params = default_parameters: run_pi4_test_from_config(folder_path, full_entry_path, ""))
 
-kubetest_repro_pi4()
+def kubetest_repro_pi4_multi():
+    global actions, run_time, folder_path
+    i = 0
+    bar = '##################################################'
+    batch_total = len(os.listdir("/reckon/to_reproduce"))
+    for run in os.listdir("/reckon/to_reproduce"):
+        full_entry_path = os.path.join("/reckon/to_reproduce", run)
+        if os.path.isdir(full_entry_path) and is_valid_timeFormat(run):
+            # We found a run config directory. Replicate the experiment
+            run_time = datetime.now().strftime("%Y%m%d%H%M%S")
+            folder_path = f"/results/{run_time}"
+            actions = []
+            kubetest_repro_pi4(rootdir=full_entry_path)
+
+            # Shuffle to isolate ordering effects
+            rng.shuffle(actions)
+
+            total = len(actions)
+            for j, act in enumerate(actions):
+                print(bar, flush=True)
+                print(f"BATCH {i+1}/{batch_total}: TEST-{j} out of {total}, {total - j} remaining", flush=True)
+                print(bar, flush=True)
+                act()
+
+            print(bar, flush=True)
+            print(f"BATCH {i+1}/{batch_total}: TESTING DONE", flush=True)
+            print(bar, flush=True)
+    print(bar, flush=True)
+    print(f"TESTING DONE", flush=True)
+    print(bar, flush=True)
+
+#kubetest_repro_pi4()
+
+kubetest_repro_pi4_multi()
 
 #kubetest()
 
 # Shuffle to isolate ordering effects
-rng.shuffle(actions)
-
-bar = '##################################################'
-
-total = len(actions)
-for i, act in enumerate(actions):
-    print(bar, flush=True)
-    print(f"TEST-{i} out of {total}, {total - i} remaining", flush=True)
-    print(bar, flush=True)
-    act()
-
-print(bar, flush=True)
-print(f"TESTING DONE", flush=True)
-print(bar, flush=True)
+#rng.shuffle(actions)
+#
+#bar = '##################################################'
+#
+#total = len(actions)
+#for i, act in enumerate(actions):
+#    print(bar, flush=True)
+#    print(f"TEST-{i} out of {total}, {total - i} remaining", flush=True)
+#    print(bar, flush=True)
+#    act()
+#
+#print(bar, flush=True)
+#print(f"TESTING DONE", flush=True)
+#print(bar, flush=True)

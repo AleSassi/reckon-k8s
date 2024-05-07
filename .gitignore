@@ -191,4 +191,6 @@ podfiles/archives/
 compiled
 goclient-compiled
 .venv
-to_reproduce
+to_reproduce*
+reckon-results
+scripts/optimalsamplecount*

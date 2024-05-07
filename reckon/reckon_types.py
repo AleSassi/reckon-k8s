@@ -21,10 +21,10 @@ import select
 
 from mininet.net import Mininet, Containernet
 from mininet.node import Host, Docker
+from mininet.link import Link
 from mininet.log import info, error, warn, debug
 from pydantic import BaseModel, Field
 from docker.models.containers import Container
-
 
 class OperationKind(str, Enum):
     Write = "write"
@@ -95,7 +95,6 @@ class Result(BaseModel):
     op_kind: OperationKind
     clientid: str
     other: dict
-
 
 class Finished(BaseModel):
     kind: Literal["finished"]
@@ -505,6 +504,7 @@ class KubeNode ( Docker ):
         # self.dcli = docker.APIClient(base_url='unix://var/run/docker.sock')
         self.d_client = docker.from_env(timeout=240)
         self.dcli = self.d_client.api
+        self.dname = "%s.%s" % (self.dnameprefix, name)
 
         _id = None
         if build_params.get("path", None):
@@ -520,6 +520,15 @@ class KubeNode ( Docker ):
 
         # pull image if it does not exist
         self._check_image_exists(dimage, True, _id=None)
+        # Check if a (killed) container with the same name exists. In that case, just reload the container and restart it!
+        restartsContainer = False
+        try:
+            dc: Container = self.d_client.containers.get(self.dname)
+            if dc.attrs['State']['Status'] != 'running' and kwargs.get("reloadable", False):
+                self.dc = dc
+                restartsContainer = True
+        except docker.errors.NotFound:
+            info("Container not found! Recreating...")
 
         # for DEBUG
         debug("Created docker container object %s\n" % name)
@@ -527,66 +536,71 @@ class KubeNode ( Docker ):
         debug("dcmd: %s\n" % str(self.dcmd))
         info("%s: kwargs %s\n" % (name, str(kwargs)))
 
-        # creats host config for container
-        # see: https://docker-py.readthedocs.io/en/stable/api.html#docker.api.container.ContainerApiMixin.create_host_config
-        hc = self.dcli.create_host_config(
-            network_mode=self.network_mode,
-            privileged=True,
-            binds=self.volumes,
-            tmpfs=self.tmpfs,
-            publish_all_ports=self.publish_all_ports,
-            port_bindings=self.port_bindings,
-            mem_limit=self.resources.get('mem_limit'),
-            cpuset_cpus=self.resources.get('cpuset_cpus'),
-            dns=self.dns,
-            ipc_mode=self.ipc_mode,  # string
-            devices=self.devices,  # see docker-py docu
-            cap_add=self.cap_add,  # see docker-py docu
-            sysctls=self.sysctls,   # see docker-py docu
-            storage_opt=self.storage_opt,
-            # Assuming Docker uses the cgroupfs driver, we set the parent to safely
-            # access cgroups when modifying resource limits.
-            cgroup_parent='/docker',
-            shm_size=self.shm_size,
-            nano_cpus=self.nano_cpus,
-            device_requests=self.device_requests,
-        )
+        if not restartsContainer:
+            # see: https://docker-py.readthedocs.io/en/stable/api.html#docker.api.container.ContainerApiMixin.create_host_config
+            # creats host config for container
+            hc = self.dcli.create_host_config(
+                network_mode=self.network_mode,
+                privileged=True,
+                binds=self.volumes,
+                tmpfs=self.tmpfs,
+                publish_all_ports=self.publish_all_ports,
+                port_bindings=self.port_bindings,
+                mem_limit=self.resources.get('mem_limit'),
+                cpuset_cpus=self.resources.get('cpuset_cpus'),
+                dns=self.dns,
+                ipc_mode=self.ipc_mode,  # string
+                devices=self.devices,  # see docker-py docu
+                cap_add=self.cap_add,  # see docker-py docu
+                sysctls=self.sysctls,   # see docker-py docu
+                storage_opt=self.storage_opt,
+                # Assuming Docker uses the cgroupfs driver, we set the parent to safely
+                # access cgroups when modifying resource limits.
+                cgroup_parent='/docker',
+                shm_size=self.shm_size,
+                nano_cpus=self.nano_cpus,
+                device_requests=self.device_requests,
+            )
 
-        # create new docker container
-        if kwargs.get("rm", False):
-            cont_name = "%s.%s" % (self.dnameprefix, name)
-            containers: list[Container] = self.d_client.containers.list(all=True)
-            print(f"Checking the existence of a container named {cont_name} (found {len(containers)} containers)...")
-            for container in containers:
-                if cont_name in container.name:
-                    print(f"Container with ID {container.id} has the same name as the container to be started. Killing and removing...")
-                    container.remove(v=True, force=True)
-        
-        print("Starting the container...")
-        self.dc = self.dcli.create_container(
-            name="%s.%s" % (self.dnameprefix, name),
-            image=self.dimage,
-            command=self.dcmd,
-            entrypoint=list(),  # overwrite (will be executed manually at the end)
-            stdin_open=True,  # keep container open
-            tty=True,  # allocate pseudo tty
-            environment=self.environment,
-            #network_disabled=True,  # docker stats breaks if we disable the default network
-            host_config=hc,
-            ports=defaults['ports'],
-            labels=['com.containernet'],
-            volumes=[self._get_volume_mount_name(v) for v in self.volumes if self._get_volume_mount_name(v) is not None],
-            hostname=name,
-        )
-        
-        # start the container
-        self.dcli.start(self.dc)
-        debug("Docker container %s started\n" % name)
+            # create new docker container
+            if kwargs.get("rm", False):
+                cont_name = "%s.%s" % (self.dnameprefix, name)
+                containers: list[Container] = self.d_client.containers.list(all=True)
+                print(f"Checking the existence of a container named {cont_name} (found {len(containers)} containers)...")
+                for container in containers:
+                    if cont_name in container.name:
+                        print(f"Container with ID {container.id} has the same name as the container to be started. Killing and removing...")
+                        container.remove(v=True, force=True)
+            
+            print("Starting the container...")
+            self.dc = self.dcli.create_container(
+                name="%s.%s" % (self.dnameprefix, name),
+                image=self.dimage,
+                command=self.dcmd,
+                entrypoint=list(),  # overwrite (will be executed manually at the end)
+                stdin_open=True,  # keep container open
+                tty=True,  # allocate pseudo tty
+                environment=self.environment,
+                #network_disabled=True,  # docker stats breaks if we disable the default network
+                host_config=hc,
+                ports=defaults['ports'],
+                labels=['com.containernet'],
+                volumes=[self._get_volume_mount_name(v) for v in self.volumes if self._get_volume_mount_name(v) is not None],
+                hostname=name,
+            )
+            # start the container
+            self.dcli.start(self.dc)
+            debug("Docker container %s started\n" % name)
+            # fetch information about new container
+            self.dcinfo = self.dcli.inspect_container(self.dc)
+        else:
+            print("Starting the container...")
+            self.dcli.start(self.dname)
+            debug("Docker container %s started\n" % name)
+            # fetch information about new container
+            self.dcinfo = self.dcli.inspect_container(self.dname)
 
-        # fetch information about new container
-        self.dcinfo = self.dcli.inspect_container(self.dc)
         self.did = self.dcinfo.get("Id")
-        self.dname = "%s.%s" % (self.dnameprefix, name)
         self.dcont: Container | None = self.d_client.containers.get(self.dname)
 
         # call original Node.__init__
@@ -597,6 +611,33 @@ class KubeNode ( Docker ):
 
         self.master = None
         self.slave = None
+        self.running = True
+        self.kubenet: KuberNet = kwargs.get("net")
+
+    def update_resources(self, **kwargs):
+        """
+        Update the container's resources using the docker.update function
+        re-using the same parameters:
+        Args:
+           blkio_weight
+           cpu_period, cpu_quota, cpu_shares
+           cpuset_cpus
+           cpuset_mems
+           mem_limit
+           mem_reservation
+           memswap_limit
+           kernel_memory
+           restart_policy
+        see https://docs.docker.com/engine/reference/commandline/update/
+        or API docs: https://docker-py.readthedocs.io/en/stable/api.html#module-docker.api.container
+        :return:
+        """
+
+        self.resources.update(kwargs)
+        # filter out None values to avoid errors
+        resources_filtered = {res:self.resources[res] for res in self.resources if self.resources[res] is not None}
+        info("{1}: update resources {0}\n".format(resources_filtered, self.name))
+        self.dcli.update_container(self.dc if not type(self.dc) is Container else self.dname, **resources_filtered) # Check for when the conatienr is restarted from a killed container
 
     def setKubeAttrs(self, is_control: bool, name: str, ip_addr: str, volume: str):
         self.k8s_name = name
@@ -687,23 +728,71 @@ class KubeNode ( Docker ):
             else:
                 warn( '(%s exited - ignoring cmd%s)\n' % ( self, args ) )
         return None
+
+    def stop( self, deleteIntfs=False ):
+        """Stop node.
+           deleteIntfs: delete interfaces? (False)
+           Overridden to call a custom Terminate that just kills (no remove) the container"""
+        if deleteIntfs:
+            self.deleteIntfs()
+        if not self._is_container_running():
+            return
+        try:
+            dc: Container = self.d_client.containers.get(self.dname)
+            dc.kill()
+        except docker.errors.APIError as e:
+            warn("Warning: API error during container kill.\n")
+
+        self.cleanup()
     
+    class KubeLink:
+        n_from: Host
+        n_to: Host
+        ip_addr_from: str
+        ip_addr_to: str
+        delay: str
+        loss: float
+        jitter: str
+
+        def __init__(self, n_from: Host, n_to: Host, ip_addr_from: str, ip_addr_to: str, delay: str, loss: float, jitter: str):
+            self.n_from = n_from
+            self.n_to = n_to
+            self.ip_addr_from = ip_addr_from
+            self.ip_addr_to = ip_addr_to
+            self.delay = delay
+            self.loss = loss
+            self.jitter = jitter
+
     def pause(self):
         """
         Simulates a (recoverable) node failure
         """
         if self.running:
-            dc: Container = self.d_client.containers.get(self.dname)
-            dc.pause() # TODO: Can we use kill here and then restart the container by reattaching it to the network??
+            # We need to copy some files to a location which persists between restarts, otherwise all data mounted to tmpfs will be wiped!
+            self.cmd("bash /kind/backup-tmpfs.sh", verbose=True)
+            # Keep track of every link we need to restore later
+            self.kubeLinks: list[self.KubeLink] = []
+            for l in self.kubenet.links:
+                link: Link = l
+                if link.intf1.node == self or link.intf2.node == self:
+                    self.kubeLinks.append(self.KubeLink(link.intf1.node,
+                                                        link.intf2.node,
+                                                        link.intf1.IP(),
+                                                        link.intf2.IP(),
+                                                        link.intf1.params["delay"] if link.intf1.node == self else link.intf2.params["delay"],
+                                                        link.intf1.params["loss"] if link.intf1.node == self else link.intf2.params["loss"],
+                                                        link.intf1.params["jitter"] if link.intf1.node == self else link.intf2.params["jitter"]))
+            self.kubenet.removeHost(self)
         self.running = False
     
-    def terminate(self):
+    def terminateAndRemove(self):
         """
         Stops the container
         """
         dc: Container = self.d_client.containers.get(self.dname)
-        try:
-            dc.stop(timeout=60)
+        try:         
+            #dc.stop(timeout=60)
+            dc.kill()
         except docker.errors.APIError as e:
             if e.status_code == 500:
                 print(f"ERROR while stopping container {self.dname}: {e.status_code} - {e.explanation}")
@@ -713,10 +802,25 @@ class KubeNode ( Docker ):
                 raise e
         dc.remove(v=True, force=True)
     
-    def restart(self):
+    def restart(self, cluster: list):
         if not self.running:
-            dc: Container = self.d_client.containers.get(self.dname)
-            dc.unpause() # TODO: Can we use restart and then reattach the container to the network??
+            # Replace the kubenode in the cluster with a new one
+            newHost = self.kubenet.addDocker(self.name,
+                                             ip=self.ip_addr,
+                                             dimage=self.dimage,
+                                             dcmd=self.dcmd, 
+                                             volumes=self.volumes,
+                                             tmpfs=self.tmpfs,
+                                             net=self.kubenet,
+                                             reloadable=True)
+            newHost.cmd("bash /kind/restore-tmpfs.sh", verbose=True)
+            # Add all links back
+            for l in self.kubeLinks:
+                link: self.KubeLink = l
+                newHost.kubenet.addLink(newHost.kubenet.get(link.n_from.name), newHost.kubenet.get(link.n_to.name), delay=link.delay, los=link.loss, jitter=link.jitter, params1={'ip': f"{link.ip_addr_from}/8"}, params2={'ip': f"{link.ip_addr_to}/8"})
+            self.kubeLinks = []
+            old_host_idx = cluster.index(self)
+            cluster[old_host_idx] = newHost
         self.running = True
 
     
@@ -784,7 +888,8 @@ class KuberNet (Containernet):
             docker_vols = ["/lib/modules:/lib/modules:ro", # Required by the KinD node image
                            "/var", # Required by the KinD node image
                            "kubenode_results:/results/logs:rw",
-                           f"kubefiles_{'cp' if is_control else 'wn'+str(worker_idx + 1)}:/etc/kubernetes:rw"]
+                           f"kubefiles_{'cp' if is_control else 'wn'+str(worker_idx + 1)}:/etc/kubernetes:rw",
+                           f"containerd_snapshots_overlayfs_{'cp' if is_control else 'wn'+str(worker_idx + 1)}:/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots"]
             if is_control:
                 # The control plane mounts the Docker volume of each worker's /etc/kubernetes dir
                 # This way it can easily copy the config required by the KinD node to workers
@@ -801,7 +906,15 @@ class KuberNet (Containernet):
                                       ip=node_info['ip_addr'],
                                       dimage=f"AleSassi/reckon-k8s-{'control' if is_control else 'worker'}",
                                       dcmd="/usr/local/bin/entrypoint /sbin/init && /bin/bash", 
-                                      volumes=docker_vols)
+                                      volumes=docker_vols,
+                                      tmpfs={
+                                          #"/var/lib/kubelet/pods": "",
+                                          "/opt/cni/bin": "exec",
+                                          "/var/lib/containerd": "exec",
+                                          "/run/containerd": "exec"
+                                          #"/etc/kubernetes/manifests": ""
+                                      },
+                                      net=self)
             kubenode.setKubeAttrs(is_control, node_info["name"], node_info["ip_addr"], node_info["volume"])
             kubenode.node_img = f"AleSassi/reckon-k8s-{'control' if is_control else 'worker'}"
             kubenode.docker_vols = docker_vols

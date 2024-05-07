@@ -11,6 +11,10 @@ run: reckon
 	-v /var \
 	-v shared_files:/files/kubefiles:rw \
 	-v kubenode_results:/results/logs/kubenodes:rw \
+	-v ./goclient-compiled:/compiled:rw \
+	-v ./results-to-reproduce:/reckon/to_reproduce:rw \
+	-v ./reckon-results:/results:rw \
+	--log-driver none \
 	 cjen1/reckon:latest bash
 
 .PHONY: tester

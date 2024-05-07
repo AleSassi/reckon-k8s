@@ -50,6 +50,7 @@ RUN apt update -yq && apt install -yq \
 # install containernet (using its Ansible playbook)
 COPY ./vendor/containernet /root/containernet
 WORKDIR /root/containernet/ansible
+#RUN rm -rf /usr/bin/python3.12/EXTERNALLY-MANAGED
 RUN ansible-playbook -i "localhost," -c local --skip-tags "notindocker" install.yml
 WORKDIR /root/containernet
 RUN make develop
