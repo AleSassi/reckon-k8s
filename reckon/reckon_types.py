@@ -382,9 +382,12 @@ class AbstractTopologyGenerator(ABC):
     def get_link_spec(self, n_from: str, n_to: str) -> LinkSpec:
         spec = self.default_spec
         for sp in self.link_specs.__root__:
-            if (sp.n_from == n_from and sp.n_to == n_to) or (sp.n_from == n_to and sp.n_to == n_from):
+            if (sp.n_from == n_from.name and sp.n_to == n_to.name) or (sp.n_from == n_to.name and sp.n_to == n_from.name):
                 spec = sp
+                print(f"Found matching spec from {sp.n_from} to {sp.n_to}")
                 break
+        if spec == self.default_spec:
+            print(f"No matching spec from {sp.n_from} to {sp.n_to} found!")
         if spec.loss_perc == 0:
             spec.loss_perc = None
         return spec
