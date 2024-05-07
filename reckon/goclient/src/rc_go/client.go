@@ -37,6 +37,7 @@ func Run_Client(client types.Client, client_gen func() (types.AbstractClient, er
 	//Phase 1: preload
 	log.Print("Phase 1: preload")
 	var ops []types.Operation
+	preloads := make([]map[string]interface{}, 0)
 	got_finalise := false
 	for !got_finalise {
 		op := utils.Recv(reader)
@@ -45,7 +46,8 @@ func Run_Client(client types.Client, client_gen func() (types.AbstractClient, er
 		case "preload":
 			preload := types.Decode_preload(op)
 			if preload.Prereq {
-				client.Perform(preload.Operation, cli, clientid, utils.Unix_seconds(time.Now()), false, client_gen)
+				preload_res := client.Perform(preload.Operation, cli, clientid, utils.Unix_seconds(time.Now()), false, client_gen)
+				preloads = append(preloads, preload_res)
 			} else {
 				ops = append(ops, preload.Operation)
 			}
@@ -87,6 +89,11 @@ func Run_Client(client types.Client, client_gen func() (types.AbstractClient, er
 
 	//Phase 3: Execute
 	log.Print("Phase 3: Execute")
+	log.Print("Phase 3.1: Sending all Prereq results")
+	for _, prereq_res := range preloads {
+		res_ch <- prereq_res
+	}
+	log.Print("Phase 3.2: Executing true ops")
 	var wg_perform sync.WaitGroup
 	stopCh := make(chan struct{})
 	op_ch := make(chan types.Operation)
