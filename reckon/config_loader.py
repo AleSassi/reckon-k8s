@@ -35,35 +35,37 @@ class CustomJSONConvertible(ABC):
         return obj_dict
 
 class ReckonConfig(BaseModel):
-    system_type: SystemType
-    client: str
-    arrival_process: ArrivalType
-    key_distribution: KeyType
-    rate: float
-    write_ratio: float
-    create_ratio: float
-    read_ratio: float
-    update_ratio: float
-    delete_ratio: float
-    max_key: int
-    payload_size: int
+    system_type: SystemType = SystemType.Kubernetes
+    client: str = "go"
+    arrival_process: ArrivalType = ArrivalType.Uniform
+    key_distribution: KeyType = KeyType.Uniform
+    rate: float = 100
+    write_ratio: float = 1
+    create_ratio: float = 0
+    read_ratio: float = 0.75
+    update_ratio: float = 0.25
+    delete_ratio: float = 0
+    max_key: int = 1
+    payload_size: int = 10
     key_gen_seed: int
     arrival_seed: int
-    system_logs: str
-    new_client_per_request: bool
-    failure_timeout: float
-    delay_interval: float
-    duration: float
-    result_location: str
-    data_dir: str
-    topo_type: TopologyType
-    number_nodes: int
-    number_clients: int
-    link_loss: float
-    link_jitter: float
-    net_spec: str
-    link_latency: float
-    failure_type: FailureType
+    system_logs: str = "./logs"
+    new_client_per_request: bool = False
+    failure_timeout: float = 1.0
+    delay_interval: float = 0.010
+    duration: float = 60
+    result_location: str = "/results/"
+    data_dir: str = "./data"
+    topo_type: TopologyType = TopologyType.Simple_K8s
+    number_nodes: int = 3
+    number_clients: int = 1
+    link_loss: float = 0
+    link_jitter: float = 0
+    net_spec: str = "[]"
+    link_latency: float = 20
+    failure_type: FailureType = FailureType.FNone
+    kill_n: int = 0
+    mtbf: float = 1
 
     def enums() -> dict[str, any]:
         return {

@@ -120,7 +120,7 @@ def collate(clients: List[t.Client], total_reqs: int) -> t.Results:
     resps = []
     remaining_clients = len(clients)
     print(f"rem_cli: {remaining_clients}")
-    with tqdm(total=total_reqs, desc="Results") as pbar: # TODO: Check if total_reqs has to consider also preload requests!
+    with tqdm(total=total_reqs, desc="Results") as pbar:
         while remaining_clients > 0:
             i = sel.select()[0][0].data
             msg = clients[i].recv()
