@@ -379,7 +379,7 @@ class AbstractTopologyGenerator(ABC):
         self.host_num = 0
         self.client_num = 0
     
-    def get_link_spec(self, n_from: str, n_to: str) -> LinkSpec:
+    def get_link_spec(self, n_from: MininetHost, n_to: MininetHost) -> LinkSpec:
         spec = self.default_spec
         for sp in self.link_specs.__root__:
             if (sp.n_from == n_from.name and sp.n_to == n_to.name) or (sp.n_from == n_to.name and sp.n_to == n_from.name):
@@ -412,6 +412,11 @@ class ThreadWithResult(threading.Thread):
     @property
     def result(self) -> Any:
         return self._result
+
+class KubeNodeType(Enum):
+        ControlPlane = 0
+        Worker = 1
+        LoadBalancer = 2
 
 class KubeNode ( Docker ):
     """
@@ -642,16 +647,17 @@ class KubeNode ( Docker ):
         info("{1}: update resources {0}\n".format(resources_filtered, self.name))
         self.dcli.update_container(self.dc if not type(self.dc) is Container else self.dname, **resources_filtered) # Check for when the conatienr is restarted from a killed container
 
-    def setKubeAttrs(self, is_control: bool, name: str, ip_addr: str, volume: str):
+    def setKubeAttrs(self, type: KubeNodeType, name: str, ip_addr: str, volume: str | None):
         self.k8s_name = name
         self.ip_addr = ip_addr
-        if is_control:
+        self.node_type = type
+        if type is not KubeNodeType.Worker:
             self.endpoint = f"{ip_addr}:6443"
         else:
             last_ip = int(ip_addr.split(".")[-1])
             self.worker_num = 255 - last_ip
         self.volume = volume
-        self.is_control = is_control
+        self.is_control = type is not KubeNodeType.Worker
 
     def start(self):
         # Overridden to do nothing, since the entrypoint is already manually executed when starting the container
@@ -795,7 +801,7 @@ class KubeNode ( Docker ):
         Stops the container
         """
         dc: Container = self.d_client.containers.get(self.dname)
-        try:
+        try:         
             #dc.stop(timeout=60)
             self.cmd("pkill -15 tcpdump", verbose=True)
             self.cmd("while pkill -0 tcpdump 2> /dev/null; do sleep 1; done;", verbose=True)
@@ -824,40 +830,59 @@ class KubeNode ( Docker ):
             # Add all links back
             for l in self.kubeLinks:
                 link: self.KubeLink = l
-                newHost.kubenet.addLink(newHost.kubenet.get(link.n_from.name), newHost.kubenet.get(link.n_to.name), delay=link.delay, los=link.loss, jitter=link.jitter, params1={'ip': f"{link.ip_addr_from}/8"}, params2={'ip': f"{link.ip_addr_to}/8"})
+                newHost.kubenet.addLink(newHost.kubenet.get(link.n_from.name), newHost.kubenet.get(link.n_to.name), delay=link.delay, los=link.loss, jitter=link.jitter, params1={'ip': "{link.ip_addr_from}/8"}, params2={'ip': f"{link.ip_addr_to}/8"})
             self.kubeLinks = []
             old_host_idx = cluster.index(self)
             cluster[old_host_idx] = newHost
+            return newHost
         self.running = True
+        return None
 
     
 class KuberNet (Containernet):
     def __init__(self, **params):
         Containernet.__init__(self, **params);
         self.cp_num = 0
+        self.lb_num = 0
         self.host_num = 0
         self.worker_num = 0
         self.config_dict: dict = {
-            "control_plane": {},
-            "workers": []
+            "control-planes": [],
+            "workers": [],
+            "load-balancer": {}
         }
 
     def addDocker(self, name, **params) -> KubeNode:
         return self.addHost(name, cls=KubeNode, **params)
     
     def _add_control_plane(self):
-        assert(self.cp_num == 0)
-        name = "cp"
+        name = f"cp{'' if self.cp_num == 0 else (self.cp_num + 1)}"
         ip_addr = f"10.0.0.{self.cp_num + 1}"
         self.cp_num += 1
         self.host_num += 1
         # Create the shared Docker volume
-        docker.from_env().volumes.create("kubefiles_cp")
-        self.config_dict["control-plane"] = {
+        docker.from_env().volumes.create(f"kubefiles_cp{self.cp_num}")
+        self.config_dict["control-planes"].append({
             "name": name,
             "ip_addr": ip_addr,
             "endpoint": f"{ip_addr}:6443",
-            "volume": "kubefiles_cp"
+            "volume": f"kubefiles_cp{self.cp_num}",
+            "image": "AleSassi/reckon-k8s-control",
+            "cmd": "/usr/local/bin/entrypoint /sbin/init && /bin/bash"
+        })
+    
+    def _add_load_balancer(self):
+        assert(self.lb_num == 0)
+        name = "lb"
+        ip_addr = f"10.0.0.{self.cp_num + 1}"
+        self.lb_num += 1
+        self.host_num += 1
+        self.config_dict["load-balancer"] = {
+            "name": name,
+            "ip_addr": ip_addr,
+            "endpoint": f"{ip_addr}:6443",
+            "image": "AleSassi/reckon-k8s-balancer", # The external load balancer
+            "cmd": "haproxy -W -db -f /usr/local/etc/haproxy/haproxy.cfg"
         }
     
     def _add_worker_node(self):
@@ -870,62 +895,89 @@ class KuberNet (Containernet):
         self.config_dict["workers"].append({
             "name": name,
             "ip_addr": f"10.0.0.{255 - self.worker_num}",
-            "volume": f"kubefiles_wn{self.worker_num}"
+            "volume": f"kubefiles_wn{self.worker_num}",
+            "image": "AleSassi/reckon-k8s-worker",
+            "cmd": "/usr/local/bin/entrypoint /sbin/init && /bin/bash"
         })
     
-    #def createCluster(self, control_planes=1, workers=2) -> list[KubeNode]:
-    def createCluster(self, workers=2) -> list[KubeNode]:
+    def _create_node(self, type: KubeNodeType, index: int) -> KubeNode:
+        print(f"Creating node {type}, index {index} - configs {self.config_dict}")
+        if type is KubeNodeType.ControlPlane:
+            node_info = self.config_dict["control-planes"][index]
+        elif type is KubeNodeType.Worker:
+            node_info = self.config_dict["workers"][index]
+        elif type is KubeNodeType.LoadBalancer:
+            node_info = self.config_dict["load-balancer"] # Assume there is just one load balancer - See K8s HA mode
+        
+        # Determine the shared folders/volumes for the node
+        docker_vols = [
+            "kubenode_results:/results/logs:rw"
+        ]
+        tmpfs_mounts = {}
+        if type is not KubeNodeType.LoadBalancer:
+            docker_vols += ["/lib/modules:/lib/modules:ro", # Required by the KinD node image
+                            "/var", # Required by the KinD node image
+                            f"kubefiles_{'cp'+str(index + 1) if type is KubeNodeType.ControlPlane else 'wn'+str(index + 1)}:/etc/kubernetes:rw",
+                            f"containerd_snapshots_overlayfs_{'cp'+str(index + 1) if type is KubeNodeType.ControlPlane else 'wn'+str(index + 1)}:/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots"]
+            tmpfs_mounts = {
+                            #"/var/lib/kubelet/pods": "",
+                            "/opt/cni/bin": "exec",
+                            "/var/lib/containerd": "exec",
+                            "/run/containerd": "exec"
+                            #"/etc/kubernetes/manifests": ""
+                        }
+        
+        if type is KubeNodeType.ControlPlane and index == 0:
+            # The (master) control plane mounts the Docker volume of each worker and secondary control plane /etc/kubernetes dir
+            # This way it can easily copy the config required by the KinD node to workers
+            workers: list[dict] = self.config_dict["workers"]
+            i = 1
+            for worker in workers:
+                docker_vols.append(f"{worker['volume']}:/kind/nodedata/wn{i}")
+                i += 1
+            if len(self.config_dict["control-planes"]) > 1:
+                secondary_cps: list[dict] = self.config_dict["control-planes"]
+                for j in range(1, len(secondary_cps)):
+                    docker_vols.append(f"{secondary_cps[j]['volume']}:/kind/nodedata/cp{j}")
+            # Add a shared directory with Reckon to share config files (for clients)
+            docker_vols.append("shared_files:/kind/shared_files:rw")
+        
+        # Create the Node container
+        kubenode = self.addDocker(node_info['name'],
+                                  ip=node_info['ip_addr'],
+                                  dimage=node_info['image'],
+                                  dcmd=node_info['cmd'], 
+                                  volumes=docker_vols,
+                                  tmpfs=tmpfs_mounts,
+                                  net=self)
+        kubenode.setKubeAttrs(type, node_info["name"], node_info["ip_addr"], node_info.get("volume"))
+        kubenode.node_img = node_info['image']
+        kubenode.docker_vols = docker_vols
+        return kubenode
+
+    def createCluster(self, workers=2, control=1) -> list[KubeNode]:
         nodes: list[KubeNode] = []
-        self._add_control_plane()
+        for _ in range(control):
+            self._add_control_plane()
         if workers > 0:
             for _ in range(workers):
                 self._add_worker_node()
+        if control > 1:
+            # With multiple control planes we need a load balancer
+            # In this case, we simulate an external load balancer based on haproxy
+            self._add_load_balancer()
         
         # Cleanup the logs directory
         self._deleteDirContent("/results/logs/kubenodes")
         
-        # Preconfigure all nodes
-        for i in range(1 + workers):
-            # Generate the kubeadm config file for the node
-            is_control = i == 0
-            worker_idx = i - 1
-            node_info = self.config_dict["control-plane"] if is_control else self.config_dict["workers"][worker_idx]
-            
-            # Determine the shared folders/volumes for the node
-            docker_vols = ["/lib/modules:/lib/modules:ro", # Required by the KinD node image
-                           "/var", # Required by the KinD node image
-                           "kubenode_results:/results/logs:rw",
-                           f"kubefiles_{'cp' if is_control else 'wn'+str(worker_idx + 1)}:/etc/kubernetes:rw",
-                           f"containerd_snapshots_overlayfs_{'cp' if is_control else 'wn'+str(worker_idx + 1)}:/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots"]
-            if is_control:
-                # The control plane mounts the Docker volume of each worker's /etc/kubernetes dir
-                # This way it can easily copy the config required by the KinD node to workers
-                workers: list[dict] = self.config_dict["workers"]
-                i = 1
-                for worker in workers:
-                    docker_vols.append(f"{worker['volume']}:/kind/nodedata/wn{i}")
-                    i += 1
-                # Add a shared directory with Reckon to share config files (for clients)
-                docker_vols.append("shared_files:/kind/shared_files:rw")
-
-            # Create the Node container
-            kubenode = self.addDocker(node_info['name'],
-                                      ip=node_info['ip_addr'],
-                                      dimage=f"AleSassi/reckon-k8s-{'control' if is_control else 'worker'}",
-                                      dcmd="/usr/local/bin/entrypoint /sbin/init && /bin/bash", 
-                                      volumes=docker_vols,
-                                      tmpfs={
-                                          #"/var/lib/kubelet/pods": "",
-                                          "/opt/cni/bin": "exec",
-                                          "/var/lib/containerd": "exec",
-                                          "/run/containerd": "exec"
-                                          #"/etc/kubernetes/manifests": ""
-                                      },
-                                      net=self)
-            kubenode.setKubeAttrs(is_control, node_info["name"], node_info["ip_addr"], node_info["volume"])
-            kubenode.node_img = f"AleSassi/reckon-k8s-{'control' if is_control else 'worker'}"
-            kubenode.docker_vols = docker_vols
-            nodes.append(kubenode)
+        # Preconfigure and create all nodes
+        if control > 1:
+            nodes.append(self._create_node(KubeNodeType.LoadBalancer, 0))
+        for i in range(control):
+            nodes.append(self._create_node(KubeNodeType.ControlPlane, i))
+        for i in range(workers):
+            nodes.append(self._create_node(KubeNodeType.Worker, i))
+        
         return nodes
 
     def _deleteDirContent(self, dirPath: str):

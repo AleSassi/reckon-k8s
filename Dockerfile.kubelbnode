@@ -1,0 +1,11 @@
+FROM kindest/haproxy:v20230606-42a2262b
+
+ENV DEBIAN_FRONTEND=noninteractive
+LABEL io.x-k8s.kind.role="external-load-balancer"
+LABEL io.x-k8s.kind.cluster="cl"
+
+RUN apt update -yq && apt install -yy -qq iputils-ping net-tools iproute2 tcpdump && apt clean
+
+RUN mkdir -p /results/logs
+
+CMD [ "/bin/bash" ]

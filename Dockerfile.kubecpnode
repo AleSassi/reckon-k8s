@@ -17,6 +17,8 @@ RUN mkdir -p /results/logs
 RUN mkdir -p /archives
 
 ADD ./scripts/startcp.sh /kind
+# For secondary control planes
+ADD ./scripts/startwn.sh /kind
 ADD ./scripts/copyconfigs.sh /kind
 ADD ./scripts/restore-tmpfs.sh /kind
 ADD ./scripts/backup-tmpfs.sh /kind

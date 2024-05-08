@@ -29,7 +29,7 @@ podfiles:
 	make build -C podfiles
 
 .PHONY:reckon
-reckon: podfiles reckon-containernet etcd-image k8s-image reckon-k8s-control reckon-k8s-worker
+reckon: podfiles reckon-containernet etcd-image k8s-image reckon-k8s-control reckon-k8s-worker reckon-k8s-balancer
 	docker build -t cjen1/reckon:latest .
 
 .PHONY: reckon-containernet
@@ -43,6 +43,10 @@ reckon-k8s-control:
 .PHONY: reckon-k8s-worker
 reckon-k8s-worker: 
 	docker build -f Dockerfile.kubewnode -t AleSassi/reckon-k8s-worker:latest .
+
+.PHONY: reckon-k8s-balancer
+reckon-k8s-balancer: 
+	docker build -f Dockerfile.kubelbnode -t AleSassi/reckon-k8s-balancer:latest .
 
 .PHONY: reckon-mininet
 reckon-mininet: 

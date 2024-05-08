@@ -261,7 +261,7 @@ def kubetest():
                 )
 
 def kubetest_repro_pi4(rootdir: str = "/reckon/to_reproduce"):
-    for run in os.listdir(rootdir):
+    for run in os.listdir(rootdir)[:1]:
         full_entry_path = os.path.join(rootdir, run)
         if os.path.isdir(full_entry_path) and is_valid_uuid(run):
             # We found a run config directory. Replicate the experiment
@@ -269,19 +269,20 @@ def kubetest_repro_pi4(rootdir: str = "/reckon/to_reproduce"):
                 if config.find(".json") >= 0:
                     config_file_reckon = os.path.join(full_entry_path, "config.json")
                     config_file_params = os.path.join(full_entry_path, "config_full.json")
-                    actions.append(lambda params = default_parameters: run_pi4_test_from_config(folder_path, config_file_params, config_file_reckon))
+                    actions.append(lambda params = default_parameters, config_file_params=config_file_params, config_file_reckon=config_file_reckon: run_pi4_test_from_config(folder_path, config_file_params, config_file_reckon))
                     break
         elif full_entry_path.find(".json") >= 0:
-            actions.append(lambda params = default_parameters: run_pi4_test_from_config(folder_path, full_entry_path, ""))
+            actions.append(lambda params = default_parameters, full_entry_path=full_entry_path: run_pi4_test_from_config(folder_path, full_entry_path, ""))
 
 def kubetest_repro_pi4_multi():
     global actions, run_time, folder_path
     i = 0
-    bar = '##################################################'
     batch_total = len(os.listdir("/reckon/to_reproduce"))
-    for run in os.listdir("/reckon/to_reproduce"):
+    bar = '##################################################'
+
+    for run in os.listdir("/reckon/to_reproduce")[:1]:
         full_entry_path = os.path.join("/reckon/to_reproduce", run)
-        if os.path.isdir(full_entry_path) and is_valid_timeFormat(run):
+        if os.path.isdir(full_entry_path): # and is_valid_timeFormat(run):
             # We found a run config directory. Replicate the experiment
             run_time = datetime.now().strftime("%Y%m%d%H%M%S")
             folder_path = f"/results/{run_time}"
@@ -301,6 +302,7 @@ def kubetest_repro_pi4_multi():
             print(bar, flush=True)
             print(f"BATCH {i+1}/{batch_total}: TESTING DONE", flush=True)
             print(bar, flush=True)
+        i += 1
     print(bar, flush=True)
     print(f"TESTING DONE", flush=True)
     print(bar, flush=True)
