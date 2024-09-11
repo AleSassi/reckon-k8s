@@ -12,7 +12,7 @@ import math
 setLogLevel("info")
 
 
-class SimpleKubeTopologyProvider(t.AbstractTopologyGenerator):
+class HAKubeTopologyProvider(t.AbstractTopologyGenerator):
     def __init__(self, number_nodes, number_clients, link_latency=None, link_loss=None, link_jitter=None, link_specs: t.NetSpec | None = None):
         # Since we have a star topology we use link_latency = link_latency / 2
         per_link_latency = (
@@ -43,13 +43,14 @@ class SimpleKubeTopologyProvider(t.AbstractTopologyGenerator):
         return self.net.addHost(name)
 
     def setup(self):
+        assert(self.number_nodes > 3)
         self.net = t.KuberNet(controller=Controller, link=TCLink)
         self.net.addController("c0")
         sw = self.add_switch()
 
         # Create the cluster and start containers
         print("Creating hosts")
-        hosts = self.net.createCluster(workers=self.number_nodes - 1)
+        hosts = self.net.createCluster(workers=self.number_nodes - 3, control=3)
         clients = [self.add_client() for _ in range(self.number_clients)]
 
         # Set up connections between nodes (with custom parameters, different for each node)

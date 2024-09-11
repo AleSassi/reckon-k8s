@@ -3,6 +3,8 @@ import json
 from reckon.topologies.simple import SimpleTopologyProvider
 from reckon.topologies.wan import WanTopologyProvider
 from reckon.topologies.simple_k8s import SimpleKubeTopologyProvider
+from reckon.topologies.ha_k8s import HAKubeTopologyProvider
+from reckon.topologies.region_ha_k8s import RegionHAKubeTopologyProvider
 
 import reckon.reckon_types as t
 
@@ -10,6 +12,8 @@ import reckon.reckon_types as t
 class TopologyType(Enum):
     Simple = "simple"
     Simple_K8s = "simple_k8s"
+    HA_K8s = "ha_k8s"
+    HA_Region_K8s = "ha_reg_k8s"
     Wan = "wan"
 
     def __str__(self):
@@ -77,6 +81,24 @@ def get_topology_provider(args) -> t.AbstractTopologyGenerator:
         )
     elif args.topo_type is TopologyType.Simple_K8s:
         return SimpleKubeTopologyProvider(
+            args.number_nodes,
+            args.number_clients,
+            args.link_latency,
+            args.link_loss,
+            args.link_jitter,
+            net_spec,
+        )
+    elif args.topo_type is TopologyType.HA_K8s:
+        return HAKubeTopologyProvider(
+            args.number_nodes,
+            args.number_clients,
+            args.link_latency,
+            args.link_loss,
+            args.link_jitter,
+            net_spec,
+        )
+    elif args.topo_type is TopologyType.HA_Region_K8s:
+        return RegionHAKubeTopologyProvider(
             args.number_nodes,
             args.number_clients,
             args.link_latency,
