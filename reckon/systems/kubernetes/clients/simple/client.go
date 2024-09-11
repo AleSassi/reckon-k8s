@@ -46,6 +46,7 @@ type rc_k8s_cli struct {
 	Client          v1.DeploymentInterface
 	DeploymentIntfs map[string]v1.DeploymentInterface
 	PodIntfs        map[string]corev1.PodInterface
+	LightRead		bool
 }
 
 type UpdateData struct {
@@ -107,6 +108,9 @@ func (c rc_k8s_cli) Read(k string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	if c.LightRead {
+		return "", "Read Successful", err
+	}
 	res, err := json.Marshal(list.Items)
 	return "", string(res), err
 }
@@ -132,8 +136,11 @@ func (c rc_k8s_cli) Update(k string, v string) (string, error) {
 			log.Println(fmt.Errorf("failed to get latest version of Deployment: %v", getErr))
 			return getErr
 		}
-
-		result.Spec.Replicas = int32Ptr(data.ReplicaDelta) // update replica count
+		
+		*result.Spec.Replicas += data.ReplicaDelta // update replica count
+		if *result.Spec.Replicas < 1 {
+			*result.Spec.Replicas = 1 // Clamp the number of replicas to AT LEAST one
+		}
 		//result.Spec.Template.Spec.Containers[0].Image = "nginx:1.13" // change nginx version
 		_, updateErr := deploymentIntf.Update(context.TODO(), result, metav1.UpdateOptions{})
 		return updateErr
@@ -206,6 +213,7 @@ func main() {
 	f_client_id := flag.String("id", "-1", "Client id")
 	f_new_client_per_request := flag.Bool("ncpr", false, "New client per request")
 	kubeconfig := flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+	f_light_read := flag.Bool("light_reads", false, "Lightweight Read Ops")
 
 	flag.Parse()
 
@@ -226,7 +234,7 @@ func main() {
 		app := clientset.AppsV1()
 		core := clientset.CoreV1()
 		deploymentsClient := app.Deployments(apiv1.NamespaceDefault)
-		return rc_k8s_cli{App: app, Core: core, Client: deploymentsClient, DeploymentIntfs: make(map[string]v1.DeploymentInterface), PodIntfs: make(map[string]corev1.PodInterface)}, nil
+		return rc_k8s_cli{App: app, Core: core, Client: deploymentsClient, DeploymentIntfs: make(map[string]v1.DeploymentInterface), PodIntfs: make(map[string]corev1.PodInterface), LightRead: *f_light_read}, nil
 	}
 
 	rc_cli := rc_go.RC_CRUD_Client{}

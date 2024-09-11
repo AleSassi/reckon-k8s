@@ -3,6 +3,9 @@ FROM kindest/node:v1.29.2
 ENV DEBIAN_FRONTEND=noninteractive
 ENV KIND_EXPERIMENTAL_CONTAINERD_SNAPSHOTTER=''
 ENV KUBECONFIG=/etc/kubernetes/admin.conf
+ENV ETCD_ARCH=amd64
+ENV ETCD_VER=v3.4.14
+ENV DOWNLOAD_URL=https://storage.googleapis.com/etcd
 
 # Install ping, needed by Containernet
 RUN apt update -yq && apt install -yy -qq iputils-ping net-tools iproute2 tcpdump rsync
@@ -19,7 +22,9 @@ RUN mkdir -p /archives
 ADD ./scripts/startcp.sh /kind
 # For secondary control planes
 ADD ./scripts/startwn.sh /kind
+ADD ./scripts/startrepcp.sh /kind
 ADD ./scripts/copyconfigs.sh /kind
+ADD ./scripts/restoreconfigs.sh /kind
 ADD ./scripts/restore-tmpfs.sh /kind
 ADD ./scripts/backup-tmpfs.sh /kind
 ADD ./scripts/loadimages.sh /archives
@@ -43,6 +48,10 @@ RUN cp /usr/local/bin/entrypoint /usr/local/bin/entrypoint.old
 RUN cat /kind/restore-tmpfs.sh > /usr/local/bin/entrypoint
 RUN echo "\n\n" >> /usr/local/bin/entrypoint
 RUN cat /usr/local/bin/entrypoint.old >> /usr/local/bin/entrypoint
+
+# Grab etcdctl
+RUN mkdir -p /tmp/etcd-download && curl -L "${DOWNLOAD_URL}/${ETCD_VER}/etcd-${ETCD_VER}-linux-${ETCD_ARCH}.tar.gz" -o "/tmp/etcd-${ETCD_VER}-linux-${ETCD_ARCH}.tar.gz" && tar xzvf "/tmp/etcd-${ETCD_VER}-linux-${ETCD_ARCH}.tar.gz" -C /tmp/etcd-download --strip-components=1 && rm -f "/tmp/etcd-${ETCD_VER}-linux-${ETCD_ARCH}.tar.gz"
+RUN cp /tmp/etcd-download/etcdctl /bin
 
 #RUN mkdir -p /containerd-run
 #RUN cp -r /run/containerd/* /containerd-run/

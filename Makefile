@@ -12,8 +12,10 @@ run: reckon
 	-v shared_files:/files/kubefiles:rw \
 	-v kubenode_results:/results/logs/kubenodes:rw \
 	-v ./goclient-compiled:/compiled:rw \
-	-v ./results-to-reproduce:/reckon/to_reproduce:rw \
-	-v ./reckon-results:/results:rw \
+	-v /local/scratch/as3575/raspikube-results:/reckon/to_reproduce:rw \
+	-v /local/scratch/as3575/reckon-results:/results:rw \
+	-v /local/scratch/as3575/reckon-results/20240509171614:/reckon/partial:rw \
+	-v /local/scratch/as3575/result_analyzer:/result_analyzer:rw \
 	--log-driver none \
 	 cjen1/reckon:latest bash
 
@@ -29,7 +31,7 @@ podfiles:
 	make build -C podfiles
 
 .PHONY:reckon
-reckon: podfiles reckon-containernet etcd-image k8s-image reckon-k8s-control reckon-k8s-worker reckon-k8s-balancer
+reckon: podfiles reckon-containernet k8s-image reckon-k8s-control reckon-k8s-worker reckon-k8s-balancer
 	docker build -t cjen1/reckon:latest .
 
 .PHONY: reckon-containernet

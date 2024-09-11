@@ -4,7 +4,7 @@
 service openvswitch-switch start
 ovs-vsctl set-manager ptcp:6640
 
-sudo mn -c
+sudo mn -c --switch lxbr,stp=1
 
 "$@"
 EXITCODE=$?

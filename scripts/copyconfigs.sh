@@ -6,6 +6,7 @@ for dir in /kind/nodedata/*
 do
     dir=${dir%*/}
     rm -rf "${dir}/*"
+    #ls -la "${dir}"
     mkdir "${dir}/pki"
     mkdir "${dir}/pki/etcd"
     for file in "${files[@]}"
@@ -13,6 +14,8 @@ do
         echo "${file}"
         cp "/etc/kubernetes/${file}" "${dir}/${file}"
     done
+    #ls -la "${dir}"
+    #ls -la "${dir}/pki"
 done
 
 cp "/etc/kubernetes/admin.conf" "/kind/shared_files/config"

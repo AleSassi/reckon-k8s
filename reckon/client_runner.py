@@ -13,7 +13,7 @@ import itertools as it
 import reckon.reckon_types as t
 
 from tqdm import tqdm
-
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 def preload(ops_provider: t.AbstractWorkload, duration: float) -> Tuple[int, list[dict]]:
     logging.debug("PRELOAD: begin")
@@ -90,50 +90,61 @@ def roundrobin(*iterables):
             nexts = cycle(islice(nexts, num_active))
 
 def execute(clients: List[t.Client], failures: List[t.AbstractFault], duration: float):
-    logging.debug("EXECUTE: begin")
-    assert(len(failures) >= 2) # fence pole style, one at start, one at end, some in the middle
+    with logging_redirect_tqdm():
+        logging.debug("EXECUTE: begin")
+        assert(len(failures) >= 2) # fence pole style, one at start, one at end, some in the middle
 
-    sleep_dur = duration / (len(failures) - 1)
+        sleep_dur = duration / (len(failures) - 1)
 
-    start_time = time.time()
+        start_time = time.time()
 
-    fault_times = [start_time + i * sleep_dur for i, _ in enumerate(failures)]
-    sleep_funcs = [lambda t=t: sleep_til(t) for t in fault_times][1:]
-    fault_funcs = [lambda f=f: f.apply_fault() for f in failures]
+        fault_log: list[str] = []
 
-    for client in clients:
-        client.send(t.start())
+        def fault_func(f: t.AbstractFault, log=fault_log):
+            log.append(f"{time.time()} - Applied fault {f}")
+            f.apply_fault()
 
-    for f in roundrobin(fault_funcs, sleep_funcs): # alternate between sleeping and 
-        f()
+        fault_times = [start_time + i * sleep_dur for i, _ in enumerate(failures)]
+        sleep_funcs = [lambda t=t: sleep_til(t) for t in fault_times][1:]
+        fault_funcs = [lambda f=f, log=fault_log: fault_func(f, log) for f in failures]
 
-    logging.debug("EXECUTE: end")
+        for client in clients:
+            client.send(t.start())
+
+        for f in roundrobin(fault_funcs, sleep_funcs): # alternate between sleeping and 
+            f()
+
+        # Write the fault log to disk
+        with open("/results/logs/fault_log.err", "w") as f:
+            f.writelines(fault_log)
+        logging.debug("EXECUTE: end")
 
 def collate(clients: List[t.Client], total_reqs: int) -> t.Results:
-    logging.debug("COLLATE: begin")
-
-    sel = selectors.DefaultSelector()
-
-    for i, client in enumerate(clients):
-        client.register_selector(sel, selectors.EVENT_READ, i)
-
     resps = []
-    remaining_clients = len(clients)
-    print(f"rem_cli: {remaining_clients}")
-    with tqdm(total=total_reqs, desc="Results") as pbar:
-        while remaining_clients > 0:
-            i = sel.select()[0][0].data
-            msg = clients[i].recv()
-            if msg.__root__.kind == "finished":
-                remaining_clients -= 1
-                clients[i].unregister_selector(sel, selectors.EVENT_READ)
-            elif msg.__root__.kind == "result":
-                pbar.update(1)
-                assert type(msg.__root__) is t.Result
-                resps.append(msg.__root__)
-            else:
-                print(f"Unexpected message: |{msg}|")
-    print("finished collate")
+    with logging_redirect_tqdm():
+        logging.debug("COLLATE: begin")
+
+        sel = selectors.DefaultSelector()
+
+        for i, client in enumerate(clients):
+            client.register_selector(sel, selectors.EVENT_READ, i)
+
+        remaining_clients = len(clients)
+        print(f"rem_cli: {remaining_clients}")
+        with tqdm(total=total_reqs, desc="Results") as pbar:
+            while remaining_clients > 0:
+                i = sel.select()[0][0].data
+                msg = clients[i].recv()
+                if msg.__root__.kind == "finished":
+                    remaining_clients -= 1
+                    clients[i].unregister_selector(sel, selectors.EVENT_READ)
+                elif msg.__root__.kind == "result":
+                    pbar.update(1)
+                    assert type(msg.__root__) is t.Result
+                    resps.append(msg.__root__)
+                else:
+                    print(f"Unexpected message: |{msg}|")
+        print("finished collate")
     return t.Results(__root__=resps)
 
 
@@ -196,9 +207,5 @@ def run_test(
     #kubecluster: list[str] = [c.IP() for c in cluster]
     #idx = 0
     logging.debug("COLLATE: collecting logs from cluster machines")
-    for node in cluster:
-        node.cmd("pkill -15 tcpdump", verbose=True)
-        node.cmd("while pkill -0 tcpdump 2> /dev/null; do sleep 1; done;", verbose=True)
-    subprocess.run(f"cp -r /results/logs/kubenodes/* {test_results_location}/", shell=True).check_returncode()
-    subprocess.run(f"cp -r /results/logs/*.err {test_results_location}/", shell=True).check_returncode()
+    system.handle_test_end(cluster, test_results_location=test_results_location)
     logging.debug("COLLATE: end")

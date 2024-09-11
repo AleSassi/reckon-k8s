@@ -258,6 +258,7 @@ class AbstractSystem(ABC):
         self.data_dir = args.data_dir
         self.failure_timeout = args.failure_timeout
         self.delay_interval = args.delay_interval
+        self.sys_variant = args.sys_variant
 
         super(AbstractSystem, self).__init__()
 
@@ -296,6 +297,10 @@ class AbstractSystem(ABC):
 
     @abstractmethod
     def prepare_test_start(self, cluster: List[MininetHost]) -> Result | None:
+        pass
+    
+    @abstractmethod
+    def handle_test_end(self, cluster: List[MininetHost], test_results_location: str):
         pass
 
     @abstractmethod
@@ -387,7 +392,7 @@ class AbstractTopologyGenerator(ABC):
                 print(f"Found matching spec from {sp.n_from} to {sp.n_to}")
                 break
         if spec == self.default_spec:
-            print(f"No matching spec from {sp.n_from} to {sp.n_to} found!")
+            print(f"No matching spec from {n_from} to {n_to} found! Going with the default")
         if spec.loss_perc == 0:
             spec.loss_perc = None
         return spec
@@ -795,17 +800,20 @@ class KubeNode ( Docker ):
                                                         link.intf1.params["jitter"] if link.intf1.node == self else link.intf2.params["jitter"]))
             self.kubenet.removeHost(self)
         self.running = False
-    
+
     def terminateAndRemove(self):
         """
-        Stops the container
+        Stops the container (forever)
         """
         dc: Container = self.d_client.containers.get(self.dname)
+        self.cmd("pkill -15 tcpdump", verbose=True)
+        self.cmd("while pkill -0 tcpdump 2> /dev/null; do sleep 1; done;", verbose=True)
+        for l in self.kubenet.links:
+            link: Link = l
+            if link.intf1.node == self or link.intf2.node == self:
+                self.kubenet.delLink(link)
         try:         
-            #dc.stop(timeout=60)
-            self.cmd("pkill -15 tcpdump", verbose=True)
-            self.cmd("while pkill -0 tcpdump 2> /dev/null; do sleep 1; done;", verbose=True)
-            dc.kill()
+            self.kubenet.removeHost(self)
         except docker.errors.APIError as e:
             if e.status_code == 500:
                 print(f"ERROR while stopping container {self.dname}: {e.status_code} - {e.explanation}")
@@ -861,7 +869,7 @@ class KuberNet (Containernet):
         self.cp_num += 1
         self.host_num += 1
         # Create the shared Docker volume
-        docker.from_env().volumes.create(f"kubefiles_cp{self.cp_num}")
+        #docker.from_env().volumes.create(f"kubefiles_cp{self.cp_num}")
         self.config_dict["control-planes"].append({
             "name": name,
             "ip_addr": ip_addr,
@@ -882,7 +890,7 @@ class KuberNet (Containernet):
             "ip_addr": ip_addr,
             "endpoint": f"{ip_addr}:6443",
             "image": "AleSassi/reckon-k8s-balancer", # The external load balancer
-            "cmd": "haproxy -W -db -f /usr/local/etc/haproxy/haproxy.cfg"
+            "cmd": "/bin/bash"
         }
     
     def _add_worker_node(self):
@@ -891,7 +899,7 @@ class KuberNet (Containernet):
         self.worker_num += 1
         self.host_num += 1
         # Create the shared Docker volume
-        docker.from_env().volumes.create(f"kubefiles_wn{self.worker_num}")
+        #docker.from_env().volumes.create(f"kubefiles_wn{self.worker_num}")
         self.config_dict["workers"].append({
             "name": name,
             "ip_addr": f"10.0.0.{255 - self.worker_num}",
@@ -916,8 +924,7 @@ class KuberNet (Containernet):
         tmpfs_mounts = {}
         if type is not KubeNodeType.LoadBalancer:
             docker_vols += ["/lib/modules:/lib/modules:ro", # Required by the KinD node image
-                            "/var", # Required by the KinD node image
-                            f"kubefiles_{'cp'+str(index + 1) if type is KubeNodeType.ControlPlane else 'wn'+str(index + 1)}:/etc/kubernetes:rw",
+                            #"/var", # Required by the KinD node image
                             f"containerd_snapshots_overlayfs_{'cp'+str(index + 1) if type is KubeNodeType.ControlPlane else 'wn'+str(index + 1)}:/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots"]
             tmpfs_mounts = {
                             #"/var/lib/kubelet/pods": "",
@@ -933,14 +940,16 @@ class KuberNet (Containernet):
             workers: list[dict] = self.config_dict["workers"]
             i = 1
             for worker in workers:
-                docker_vols.append(f"{worker['volume']}:/kind/nodedata/wn{i}")
+                docker_vols.append(f"{worker['volume']}:/kind/nodedata/wn{i}:rw")
                 i += 1
             if len(self.config_dict["control-planes"]) > 1:
                 secondary_cps: list[dict] = self.config_dict["control-planes"]
                 for j in range(1, len(secondary_cps)):
-                    docker_vols.append(f"{secondary_cps[j]['volume']}:/kind/nodedata/cp{j}")
+                    docker_vols.append(f"{secondary_cps[j]['volume']}:/kind/nodedata/cp{j}:rw")
             # Add a shared directory with Reckon to share config files (for clients)
             docker_vols.append("shared_files:/kind/shared_files:rw")
+        elif type is not KubeNodeType.LoadBalancer:
+            docker_vols.append(f"{node_info['volume']}:/kind/nodedata:rw")
         
         # Create the Node container
         kubenode = self.addDocker(node_info['name'],

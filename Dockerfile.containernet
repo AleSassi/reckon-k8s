@@ -1,12 +1,15 @@
-FROM ubuntu:latest
+FROM ubuntu:22.04
 
 USER root
 WORKDIR /root
 
 ARG DEBIAN_FRONTEND=noninteractive
 
+#RUN apt-get update && apt-get install -y software-properties-common
+#RUN add-apt-repository --yes --update ppa:ansible/ansible
+
 # install required packages
-RUN apt-get clean
+#RUN apt-get clean
 RUN apt-get update \
     && apt-get install -y  git \
     net-tools \
@@ -47,10 +50,15 @@ RUN apt update -yq && apt install -yq \
     python-is-python3 \
     tcpdump
 
+# Apparently the PPA for ansible is not updated, so we update ansible manually to 2.17
+#RUN curl -L "https://files.pythonhosted.org/packages/2f/77/97fb1880abb485f1df31b36822c537330db86bea4105fdea6e1946084c16/ansible_core-2.17.0-py3-none-any.whl" -o /root/ansible_core-2.17.0-py3-none-any.whl
+#RUN pip3 install --break-system-packages /root/ansible_core-2.17.0-py3-none-any.whl
+
 # install containernet (using its Ansible playbook)
 COPY ./vendor/containernet /root/containernet
 WORKDIR /root/containernet/ansible
-#RUN rm -rf /usr/bin/python3.12/EXTERNALLY-MANAGED
+#RUN rm -rf /usr/lib/python*/EXTERNALLY-MANAGED
+#COPY ./containernet-ansible.yaml ./install.yml
 RUN ansible-playbook -i "localhost," -c local --skip-tags "notindocker" install.yml
 WORKDIR /root/containernet
 RUN make develop
@@ -65,4 +73,4 @@ RUN chmod +x /root/containernet/util/docker/entrypoint.sh
 ENV NETSIM_RUNTIME="containernet"
 
 ENTRYPOINT ["/root/containernet/util/docker/entrypoint.sh"]
-CMD ["mn"]
+CMD ["mn --switch lxbr,stp=1"]

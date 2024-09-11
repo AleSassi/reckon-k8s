@@ -10,7 +10,7 @@ if [ ! -S /var/run/docker.sock ]; then
     exit 1
 fi
 
-sudo mn -c
+sudo mn -c --switch lxbr,stp=1
 
 echo "Welcome to Containernet running within a Docker container ..."
 

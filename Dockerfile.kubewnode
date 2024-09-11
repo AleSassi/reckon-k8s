@@ -16,6 +16,7 @@ RUN mkdir -p /archives
 RUN touch /kind/kubeadm.conf
 ADD ./scripts/loadimages.sh /archives
 ADD ./scripts/restore-tmpfs.sh /kind
+ADD ./scripts/restoreconfigs.sh /kind
 ADD ./scripts/backup-tmpfs.sh /kind
 ADD ./podfiles/archives /archives
 ADD ./scripts/kubenode-entrypoint.sh /kind

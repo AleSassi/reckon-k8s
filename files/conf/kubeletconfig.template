@@ -1,0 +1,13 @@
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd # Replace with the ACTUAL cgroup driver for Docker in use in your system!!
+cgroupRoot: /kubelet
+failSwapOn: false
+# disable disk resource management by default
+# kubelet will see the host disk that the inner container runtime
+# is ultimately backed by and attempt to recover disk space. we don't want that.
+imageGCHighThresholdPercent: 100
+evictionHard:
+  nodefs.available: "0%"
+  nodefs.inodesFree: "0%"
+  imagefs.available: "0%"

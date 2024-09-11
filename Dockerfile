@@ -53,7 +53,7 @@ ENV KUBECONFIG=/files/kubefiles/config
 
 # Add built artefacts
 ENV ETCD_UNSUPPORTED_ARCH=arm64
-COPY --from=etcd-image /reckon/systems/etcd reckon/systems/etcd
+#COPY --from=etcd-image /reckon/systems/etcd reckon/systems/etcd
 COPY --from=k8s-image /reckon/systems/kubernetes reckon/systems/kubernetes
 
 # Add reckon code

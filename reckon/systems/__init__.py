@@ -58,6 +58,13 @@ def register_system_args(parser):
     )
 
     system_group.add_argument(
+        "--light_reads",
+        default=False,
+        help="Should a the client just log whether a read was successful or not (without the read content).",
+        type=lambda x: bool(strtobool(x)),
+    )
+
+    system_group.add_argument(
         "--failure_timeout",
         default=1.0,
         help="Timeout until failure detector triggers an election",
@@ -69,6 +76,13 @@ def register_system_args(parser):
         default=0.010,
         help="Delay before command applied, should be > latency",
         type = float,
+    )
+
+    system_group.add_argument(
+        "--sys_variant",
+        default=0,
+        help="System variant (if any)",
+        type = int,
     )
 
 def get_system(args) -> t.AbstractSystem:

@@ -1,0 +1,19 @@
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+kubernetesVersion: v1.29.2
+clusterName: "cl"
+controlPlaneEndpoint: "" # Must be added at runtime!
+apiServer:
+  certSANs:
+    - localhost
+    - 127.0.0.1
+  extraArgs:
+    runtime-config: ""
+controllerManager:
+  extraArgs:
+    enable-hostpath-provisioner: "true"
+scheduler:
+  extraArgs:
+networking:
+  podSubnet: 10.244.0.0/16
+  serviceSubnet: 10.96.0.0/16
