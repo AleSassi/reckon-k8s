@@ -3,6 +3,8 @@ from time import time
 from typing import List, Iterator
 import itertools as it
 from reckon.workload.uniform_crud import UniformCRUD
+from reckon.workload.timed_crud import TimedCRUD
+from reckon.workload.tptest_crud import TPTestCRUD
 from reckon.workload.uniform import UniformKeys, UniformArrival
 from reckon.workload.poisson import PoissonArrival
 
@@ -11,6 +13,7 @@ import reckon.systems as s
 
 class KeyType(Enum):
     Uniform = "uniform"
+    TPTest = "tptest"
 
     def __str__(self):
         return self.value
@@ -146,11 +149,13 @@ class Workload(t.AbstractWorkload):
 def get_key_provider(args) -> t.AbstractKeyGenerator:
     if args.key_distribution is KeyType.Uniform:
         if args.system_type is s.SystemType.Kubernetes:
-            return UniformCRUD(
-                op_ratio=(args.create_ratio, args.read_ratio, args.update_ratio, args.delete_ratio),
-                max_key=args.max_key,
-                rand_seed=args.key_gen_seed if args.key_gen_seed is not None else int(time())
-                )
+            #return UniformCRUD(
+            #    op_ratio=(args.create_ratio, args.read_ratio, args.update_ratio, args.delete_ratio),
+            #    max_key=args.max_key,
+            #    rand_seed=args.key_gen_seed if args.key_gen_seed is not None else int(time())
+            #    )
+            return TimedCRUD(max_key=args.max_key,
+                             rand_seed=args.key_gen_seed if args.key_gen_seed is not None else int(time()))
         else:
             return UniformKeys(
                     write_ratio=args.write_ratio,
@@ -159,6 +164,13 @@ def get_key_provider(args) -> t.AbstractKeyGenerator:
                     restrict_RW=args.system is not s.SystemType.Kubernetes,
                     rand_seed=args.key_gen_seed if args.key_gen_seed is not None else int(time())
                     )
+    elif args.key_distribution is KeyType.TPTest:
+        if args.system_type is s.SystemType.Kubernetes:
+            return TPTestCRUD(max_key=args.max_key,
+                              req_per_sec=args.rate,
+                             rand_seed=args.key_gen_seed if args.key_gen_seed is not None else int(time()))
+        else:
+           raise Exception("Not supported key distribution: " + str(args.key_distribution))
     else:
         raise Exception("Not supported key distribution: " + str(args.key_distribution))
 
