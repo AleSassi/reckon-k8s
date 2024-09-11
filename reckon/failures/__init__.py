@@ -5,6 +5,9 @@ from reckon.failures.none import NoFailure
 from reckon.failures.partialpartition import PPartitionFailure
 from reckon.failures.intermittent_partial import IntermittentPPartitionFailure
 from reckon.failures.intermittent_full import IntermittentFPartitionFailure
+from reckon.failures.k8s_worker_offline import IntermittentWorkerOfflineFailure
+from reckon.failures.k8s_control_offline import IntermittentControlOfflineFailure
+from reckon.failures.k8s_leader_region_offline import LeaderRegionOfflineFaultFailure
 from reckon.failures.kill_n import KillN
 from reckon.failures.stat import StatFault
 
@@ -18,6 +21,9 @@ class FailureType(Enum):
     FPartialPartition = "partial-partition"
     FIntermittentPP = "intermittent-partial"
     FIntermittentFP = "intermittent-full"
+    FK8sControlOffline = "k8s_cp_offline"
+    FK8sWorkerOffline = "k8s_wn_offline"
+    FK8sRegionOffline = "k8s_leadreg_offline"
     FKillN = "kill-n"
     Stat = "stat"
 
@@ -48,6 +54,12 @@ def get_failure_provider(args) -> t.AbstractFailureGenerator:
         return IntermittentPPartitionFailure(args.mtbf)
     elif args.failure_type is FailureType.FIntermittentFP:
         return IntermittentFPartitionFailure(args.mtbf)
+    elif args.failure_type is FailureType.FK8sWorkerOffline:
+        return IntermittentWorkerOfflineFailure(args.mtbf)
+    elif args.failure_type is FailureType.FK8sControlOffline:
+        return IntermittentControlOfflineFailure(args.mtbf)
+    elif args.failure_type is FailureType.FK8sRegionOffline:
+        return LeaderRegionOfflineFaultFailure()
     elif args.failure_type is FailureType.FKillN:
         return KillN(args.kill_n)
     elif args.failure_type is FailureType.Stat:
