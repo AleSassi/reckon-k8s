@@ -31,8 +31,15 @@ class ArgsEncoder(json.JSONEncoder):
         return str(obj)
     return super(ArgsEncoder, self).default(obj)
 
+def namespace_to_dict(namespace):
+    return {
+        k: namespace_to_dict(v) if isinstance(v, argparse.Namespace) else v
+        for k, v in vars(namespace).items()
+    }
+
 if __name__ == "__main__":
     # ------- Parse arguments --------------------------
+    print("Starting argparse")
     parser = argparse.ArgumentParser(
         description="Runs a benchmark of a local fault tolerant datastore"
     )
@@ -48,10 +55,12 @@ if __name__ == "__main__":
     arg_group.add_argument("--duration", type=float, default=60)
     arg_group.add_argument("--result-location", default="/results/")
 
+    print("Parsing")
     args = parser.parse_args()
-
+    print("Ended parse")
     # Load the config file JSON, then give the config as a namespace
     try:
+      print(args.config)
       inconfig: Config = Config.parse_file(args.config)
       for attr, val in vars(args).items():
         if hasattr(inconfig.reckonConfig, attr) and val == parser.get_default(attr):
@@ -130,14 +139,16 @@ if __name__ == "__main__":
               failures,
           ))
           p.start()
-          p.join(max(args.duration * 10, 600))
+          p.join(max(args.duration * 10, 900))
           p.terminate()
         except Exception as e:
           print(e)
           for stopper in killers.values():
               stopper()
+          net.stop()
           sys.exit(1)
         finally:
           for stopper in killers.values():
               stopper()
+          net.stop()
           logging.info("Finished Test")

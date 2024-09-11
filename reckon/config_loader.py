@@ -36,7 +36,7 @@ class CustomJSONConvertible(ABC):
 
 class ReckonConfig(BaseModel):
     system_type: SystemType = SystemType.Kubernetes
-    client: str = "go"
+    client: str | None = "go"
     arrival_process: ArrivalType = ArrivalType.Uniform
     key_distribution: KeyType = KeyType.Uniform
     rate: float = 100
