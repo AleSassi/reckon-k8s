@@ -184,5 +184,8 @@ class Zookeeper(t.AbstractSystem):
     def prepare_test_start(self, cluster: t.List[t.Host]) -> t.Result | None:
         return None
 
+    def handle_test_end(self, cluster: t.List[t.Host], test_results_location: str):
+        subprocess.run(f"mv /results/logs/*.err {test_results_location}/", shell=True).check_returncode()
+
 class ZookeeperFLE(Zookeeper):
     electionAlg = 3 # Use FastLeaderElection
